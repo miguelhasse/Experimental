@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="MarkItDown.Benchmarks/MarkItDown.Benchmarks.csproj" />
+  <Project Path="MarkItDown.Cli/MarkItDown.Cli.csproj" />
+  <Project Path="MarkItDown.Core/MarkItDown.Core.csproj" />
+  <Project Path="MarkItDown.Tests/MarkItDown.Tests.csproj" />
+</Solution>
