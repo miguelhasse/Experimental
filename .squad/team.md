@@ -23,6 +23,10 @@
 | Avasarala | Project Manager | `.squad/agents/avasarala/charter.md` | 📋 Active |
 | Drummer | Release Manager | `.squad/agents/drummer/charter.md` | 🚀 Active |
 | Bobbie | Tester | `.squad/agents/bobbie/charter.md` | 🧪 Active |
+| Ashford | Git Expert | `.squad/agents/ashford/charter.md` | 🔀 Active |
+| Dawes | PR Expert | `.squad/agents/dawes/charter.md` | 🔃 Active |
+| Cortazar | Mermaid Expert | `.squad/agents/cortazar/charter.md` | 📐 Active |
+| Anna | Illustrator | `.squad/agents/anna/charter.md` | 🎨 Active |
 | Scribe | Session Logger | `.squad/agents/scribe/charter.md` | 📋 Silent |
 | Ralph | Work Monitor | — | 🔄 Monitor |
 
@@ -33,3 +37,15 @@
 - **Stack:** Mixed (varies per sub-project)
 - **Universe:** The Expanse
 - **Created:** 2026-03-23
+
+## Monorepo Structure
+
+This repository is a **hub for multiple projects/experiments**. Each root-level folder is a separate project with its own:
+- PRDs and FRDs
+- Architecture documents
+- Full project file structure
+- Project-specific assets
+
+**Current projects:** MarkItDown
+
+**Issue tagging:** All issues and bugs MUST be tagged with the project they refer to.

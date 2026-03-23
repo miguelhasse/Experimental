@@ -104,6 +104,38 @@
       "created_at": "2026-03-23T22:26:50Z",
       "legacy_named": false,
       "status": "active"
+    },
+    {
+      "persistent_name": "Ashford",
+      "role": "Git Expert",
+      "universe": "The Expanse",
+      "created_at": "2026-03-23T22:46:58Z",
+      "legacy_named": false,
+      "status": "active"
+    },
+    {
+      "persistent_name": "Dawes",
+      "role": "PR Expert",
+      "universe": "The Expanse",
+      "created_at": "2026-03-23T22:46:58Z",
+      "legacy_named": false,
+      "status": "active"
+    },
+    {
+      "persistent_name": "Cortazar",
+      "role": "Mermaid Expert",
+      "universe": "The Expanse",
+      "created_at": "2026-03-23T22:46:58Z",
+      "legacy_named": false,
+      "status": "active"
+    },
+    {
+      "persistent_name": "Anna",
+      "role": "Illustrator",
+      "universe": "The Expanse",
+      "created_at": "2026-03-23T22:46:58Z",
+      "legacy_named": false,
+      "status": "active"
     }
   ]
 }

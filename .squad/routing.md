@@ -17,6 +17,10 @@ How to decide who handles what.
 | Project management | Avasarala | Planning, prioritization, milestones, risk, resource allocation |
 | Releases & CI/CD | Drummer | Pipelines, versioning, release notes, GitHub Actions, deployment |
 | Testing & quality | Bobbie | Unit/integration/e2e tests, edge cases, coverage, test automation |
+| Git & branching | Ashford | Git workflows, trunk-based dev, rebasing, merge conflicts, branch protection |
+| Pull requests | Dawes | PR descriptions, templates, review workflows, PR labeling, changelogs |
+| Diagrams & visuals | Cortazar | Mermaid diagrams, flowcharts, sequence diagrams, ER diagrams, architecture visuals |
+| Illustrations & branding | Anna | SVG banners, badges, README visuals, project branding, ASCII art |
 | Code review | Holden | Review PRs, check quality, suggest improvements |
 | Testing | Bobbie | Write tests, find edge cases, verify fixes |
 | Scope & priorities | Avasarala | What to build next, trade-offs, decisions |
