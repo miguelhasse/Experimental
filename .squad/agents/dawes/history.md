@@ -8,4 +8,4 @@
 
 ## Learnings
 
-<!-- Append new learnings below. Each entry is something lasting about the project. -->
+- **Fork PR Workflow**: This repo uses a cross-fork contribution pattern. Contributor (marconsilva) forks upstream, pushes branch to fork, then uses `gh pr create --head marconsilva:squad --base main` to create PR from fork to upstream. Useful when contributor lacks direct push access.
