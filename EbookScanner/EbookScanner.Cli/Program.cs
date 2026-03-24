@@ -33,7 +33,7 @@ var recursiveOption = new Option<bool>("--recursive", ["-r"])
 
 var includeOption = new Option<string[]?>("--include")
 {
-    Description = "Formats to include: pdf, epub, mobi (default: all)",
+    Description = "Formats to include: pdf, epub, mobi, chm (default: all)",
     AllowMultipleArgumentsPerToken = true,
 };
 
@@ -224,7 +224,7 @@ static IReadOnlyList<string>? ParseColumns(string[]? columns)
 public sealed class EbookScannerTools(EbookScannerService service)
 {
     [McpServerTool(Name = "scan_directory"),
-     Description("Scan a directory for PDF, EPUB, and MOBI files and return their metadata as a catalog. " +
+     Description("Scan a directory for PDF, EPUB, MOBI, and CHM files and return their metadata as a catalog. " +
                  "The 'format' parameter accepts 'markdown' (default), 'json', or 'table'. " +
                  "When format is 'table', the optional 'columns' parameter accepts a comma-separated list of column names: " +
                  "name, location, format, authors, publisher, language, isbn, published, modified, pages, tags, size, description. " +
@@ -253,7 +253,7 @@ public sealed class EbookScannerTools(EbookScannerService service)
     }
 
     [McpServerTool(Name = "extract_metadata"),
-     Description("Extract metadata from a single PDF, EPUB, or MOBI file. " +
+     Description("Extract metadata from a single PDF, EPUB, MOBI, or CHM file. " +
                  "The 'format' parameter accepts 'markdown', 'table', or 'json' (default). " +
                  "When format is 'table', the optional 'columns' parameter accepts a comma-separated list of column names: " +
                  "name, location, format, authors, publisher, language, isbn, published, modified, pages, tags, size, description.")]

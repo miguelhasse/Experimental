@@ -11,10 +11,10 @@ EbookScanner mcp [options]
 
 ## Scan Command (default)
 
-Scans a directory for PDF, EPUB, and MOBI files and outputs a metadata catalog.
+Scans a directory for PDF, EPUB, MOBI, and CHM files and outputs a metadata catalog.
 
 ```bash
-EbookScanner [<directory>] [-o <file>] [-f markdown|json] [-r] [--include pdf|epub|mobi]
+EbookScanner [<directory>] [-o <file>] [-f markdown|json] [-r] [--include pdf|epub|mobi|chm]
 ```
 
 | Option | Short | Description | Default |
@@ -23,7 +23,7 @@ EbookScanner [<directory>] [-o <file>] [-f markdown|json] [-r] [--include pdf|ep
 | `--output` | `-o` | Write output to file instead of stdout | stdout |
 | `--format` | `-f` | Output format: `markdown` or `json` | `markdown` |
 | `--recursive` | `-r` | Scan subdirectories recursively | false (top-level only) |
-| `--include` | | Formats to include: `pdf`, `epub`, `mobi` | All three |
+| `--include` | | Formats to include: `pdf`, `epub`, `mobi`, `chm` | All four |
 
 ### Examples
 
@@ -149,7 +149,7 @@ Scans a directory and returns a catalog of all found ebooks.
 
 ### `extract_metadata`
 
-Extracts metadata from a single PDF, EPUB, or MOBI file.
+Extracts metadata from a single PDF, EPUB, MOBI, or CHM file.
 
 **Parameters:**
 

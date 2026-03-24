@@ -1,6 +1,6 @@
 # EbookScanner
 
-A .NET 10 solution for scanning a file system directory tree for **PDF**, **EPUB**, and **MOBI** files and extracting their metadata into a structured catalog in **Markdown** or **JSON** format.
+A .NET 10 solution for scanning a file system directory tree for **PDF**, **EPUB**, **MOBI**, and **CHM** files and extracting their metadata into a structured catalog in **Markdown** or **JSON** format.
 
 The solution also exposes an **MCP (Model Context Protocol) server** for AI assistant integration.
 
@@ -35,7 +35,7 @@ OPTIONS:
   -o, --output <file>        Write output to file instead of stdout
   -f, --format <format>      Output format: markdown or json  [default: markdown]
   -r, --recursive            Scan subdirectories recursively
-      --include <fmt>...     Formats to include: pdf, epub, mobi  [default: all]
+      --include <fmt>...     Formats to include: pdf, epub, mobi, chm  [default: all]
   -?, -h, --help             Show help
       --version              Show version
 
@@ -71,7 +71,7 @@ EbookScanner mcp --http --port 3001
 
 **Directory:** /Users/me/Books
 **Scanned:** 2026-03-24 08:00:00
-**Total:** 3 books · PDF: 1 · EPUB: 1 · MOBI: 1
+**Total:** 4 books · PDF: 1 · EPUB: 1 · MOBI: 1 · CHM: 1
 
 ---
 
@@ -125,8 +125,9 @@ When running as an MCP server, the following tools are exposed:
 | PDF    | ✓ | ✓ | ✓ (Creator) | — | — | ✓ | Creation + Modified | ✓ (Keywords) |
 | EPUB   | ✓ | ✓ | ✓ | ✓ | ✓ | — | Published | ✓ (Subjects) |
 | MOBI   | ✓ | ✓ | ✓ | ✓ | ✓ | — | Published | ✓ |
+| CHM    | ✓ | — | — | ✓ (LCID) | — | — | — | — |
 
-> MOBI metadata is extracted by parsing the Palm Database Format and EXTH header records directly — no third-party library required.
+> MOBI and CHM metadata are extracted by parsing binary file formats directly — no third-party library required.
 
 ## Packages
 
@@ -145,7 +146,7 @@ When running as an MCP server, the following tools are exposed:
 # Build the full solution
 dotnet build EbookScanner.slnx
 
-# Run all unit tests (32 tests)
+# Run all unit tests (60 tests)
 dotnet test EbookScanner.slnx
 ```
 

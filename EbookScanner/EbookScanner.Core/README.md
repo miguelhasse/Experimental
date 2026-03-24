@@ -1,6 +1,6 @@
 # EbookScanner.Core
 
-A .NET 10 class library providing the core ebook scanning and metadata extraction pipeline. It supports PDF, EPUB, and MOBI files and can format results as Markdown or JSON.
+A .NET 10 class library providing the core ebook scanning and metadata extraction pipeline. It supports PDF, EPUB, MOBI, and CHM files and can format results as Markdown or JSON.
 
 ## Namespace Structure
 
@@ -10,12 +10,13 @@ EbookScanner.Core
 │   ├── BookMetadata       — unified metadata record for any ebook format
 │   ├── ScanOptions        — input parameters for a directory scan
 │   ├── ScanResult         — output: list of books + scan summary
-│   └── BookFormat         — enum: Pdf | Epub | Mobi
+│   └── BookFormat         — enum: Pdf | Epub | Mobi | Chm
 ├── Extractors/
 │   ├── BookMetadataExtractor   — abstract base class
 │   ├── PdfMetadataExtractor    — extracts from PDF via UglyToad.PdfPig
 │   ├── EpubMetadataExtractor   — extracts from EPUB via VersOne.Epub
-│   └── MobiMetadataExtractor   — extracts from MOBI/AZW via custom binary parser
+│   ├── MobiMetadataExtractor   — extracts from MOBI/AZW via custom binary parser
+│   └── ChmMetadataExtractor    — extracts from CHM via custom ITSF binary parser
 ├── Formatters/
 │   ├── IMetadataFormatter      — interface
 │   ├── MarkdownFormatter       — renders a human-readable catalog
@@ -31,7 +32,7 @@ EbookScanner.Core
 public record BookMetadata(
     string FilePath,
     string FileName,
-    string Format,           // "PDF", "EPUB", or "MOBI"
+    string Format,           // "PDF", "EPUB", "MOBI", or "CHM"
     long FileSizeBytes,
     string? Title = null,
     string[]? Authors = null,
@@ -142,6 +143,27 @@ Key EXTH record types used:
 | 524 | Language |
 
 Handles truncated or malformed files by falling back to the Palm DB name as title.
+
+### CHM (`ChmMetadataExtractor`)
+
+No external library. Parses the **ITSF (Info-Tech Storage Format)** container binary:
+
+- ITSF header (v2/v3): verifies magic, reads directory section offset and data offset
+- ITSP directory header: locates the first PMGL leaf chunk and chunk block size
+- PMGL leaf chunks: walks chunk chain reading entries with variable-length encoded integers
+- **`/#SYSTEM` virtual file**: uncompressed metadata block (content section 0)
+
+Key `#SYSTEM` tag codes used:
+
+| Code | Field | Notes |
+|------|-------|-------|
+| 3 | Title | Null-terminated UTF-8 string |
+| 4 | LCID | Bytes 4–7 of an 8-byte record |
+| 10 | Language LCID | 4-byte Windows locale ID |
+
+The LCID is converted to a BCP-47 language tag via `CultureInfo.GetCultureInfo(lcid).Name`.
+
+Handles truncated, malformed, or non-CHM files gracefully via a top-level try/catch fallback.
 
 ## Dependencies
 

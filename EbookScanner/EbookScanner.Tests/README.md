@@ -20,11 +20,13 @@ dotnet test EbookScanner.slnx
 ```
 EbookScanner.Tests/
 ├── Formatters/
-│   ├── MarkdownFormatterTests.cs    — catalog output, field formatting, edge cases
-│   └── JsonFormatterTests.cs       — JSON structure, camelCase, null omission
+│   ├── MarkdownFormatterTests.cs      — catalog output, field formatting, edge cases (6 tests)
+│   ├── MarkdownTableFormatterTests.cs — table output, column selection, escaping (10 tests)
+│   └── JsonFormatterTests.cs          — JSON structure, camelCase, null omission (5 tests)
 ├── Extractors/
-│   └── MobiMetadataExtractorTests.cs — file extension acceptance, binary parsing
-└── EbookScannerServiceTests.cs      — directory scanning, recursion, format filtering
+│   ├── MobiMetadataExtractorTests.cs  — extension acceptance, binary parsing (13 tests)
+│   └── ChmMetadataExtractorTests.cs   — extension acceptance, ITSF binary parsing (13 tests)
+└── EbookScannerServiceTests.cs        — directory scanning, recursion, format filtering (13 tests)
 ```
 
 ## Test Coverage
@@ -36,9 +38,24 @@ EbookScanner.Tests/
 | `Format_EmptyResult_ContainsCatalogHeader` | Verifies header and directory are included |
 | `Format_SingleBook_ContainsTitle` | Book title appears as a section heading |
 | `Format_SingleBook_ContainsAllFields` | Authors, publisher, ISBN, pages, date, tags, size |
-| `Format_MultipleBooks_ShowsFormatBreakdown` | PDF/EPUB/MOBI counts in summary line |
+| `Format_MultipleBooks_ShowsFormatBreakdown` | PDF/EPUB/MOBI/CHM counts in summary line |
 | `Format_BookWithNoTitle_UsesFileNameWithoutExtension` | Fallback title from filename |
 | `Format_LongDescription_IsTruncated` | Descriptions over 200 chars are truncated |
+
+### `MarkdownTableFormatterTests`
+
+| Test | Description |
+|------|-------------|
+| `Format_DefaultColumns_SixColumns` | Default column set has six headers |
+| `Format_DefaultColumns_DataRowContainsValues` | Data row values match the book |
+| `Format_EmptyResult_ContainsHeaderAndEmptyTable` | Table with no data rows |
+| `Format_MultipleBooks_MultipleDataRows` | One data row per book |
+| `Format_CustomColumns_OnlyRequestedColumnsPresent` | Column subset selection |
+| `Format_AllColumns_AllHeadersPresent` | All 13 valid columns appear |
+| `Format_NoTitle_UsesFilenameWithoutExtension` | Fallback title in table cell |
+| `Format_NullFields_RenderAsEmptyCell` | Null values produce empty cells |
+| `Format_PipeInCellValue_IsEscaped` | Pipe `\|` characters are escaped |
+| `Format_LongDescription_TruncatedAt100Chars` | Descriptions over 100 chars truncated |
 
 ### `JsonFormatterTests`
 
@@ -62,6 +79,20 @@ EbookScanner.Tests/
 | `ExtractAsync_ValidMobiFile_HasCorrectFileName` | FileName matches the input file |
 | `ExtractAsync_TruncatedFile_FallsBackGracefully` | Short/corrupt file doesn't throw |
 
+### `ChmMetadataExtractorTests`
+
+| Test | Description |
+|------|-------------|
+| `Accepts_ChmExtension_ReturnsTrue` | `.chm` extension is accepted |
+| `Accepts_ChmExtensionCaseInsensitive_*` | `.CHM`, `.Chm` variants accepted |
+| `Accepts_InvalidExtensions_*` | `.pdf`, `.epub`, `.mobi`, `.txt` rejected |
+| `ExtractAsync_ValidChmFile_ExtractsTitle` | Reads `#SYSTEM` tag code 3 (Title) |
+| `ExtractAsync_ValidChmFile_HasCorrectFormat` | Format string is `"CHM"` |
+| `ExtractAsync_ValidChmFile_HasCorrectFileName` | FileName matches the input file |
+| `ExtractAsync_ValidChmFileWithLanguage_ExtractsLanguage` | LCID 1033 → `"en-US"` |
+| `ExtractAsync_TruncatedFile_FallsBackGracefully` | Short file doesn't throw |
+| `ExtractAsync_InvalidMagic_ReturnsNullTitle` | Non-CHM file returns null title |
+
 ### `EbookScannerServiceTests`
 
 | Test | Description |
@@ -73,7 +104,8 @@ EbookScanner.Tests/
 | `ScanAsync_CorruptFile_IsSkippedGracefully` | Bad files invoke `onError`, not exceptions |
 | `ExtractAsync_UnknownExtension_ReturnsNull` | Unsupported extension returns `null` |
 | `ScanAsync_SetsScannedDirectory_ToFullPath` | Result path is fully qualified |
-| `ScanAsync_ScannedAt_IsRecentUtcTime` | Timestamp is within the test window |
+| `ScanAsync_NullProgress_DoesNotThrow` | Null progress reporter is safe |
+| `ScanAsync_Progress_*` | Progress reporting: file path, current/total, timing |
 
 ## Dependencies
 

@@ -7,9 +7,10 @@ public sealed class EbookScannerService(Action<string, Exception>? onError = nul
 {
     private static readonly Dictionary<BookFormat, string[]> FormatExtensions = new()
     {
-        [BookFormat.Pdf] = [".pdf"],
+        [BookFormat.Pdf]  = [".pdf"],
         [BookFormat.Epub] = [".epub"],
         [BookFormat.Mobi] = [".mobi", ".azw", ".azw3", ".prc"],
+        [BookFormat.Chm]  = [".chm"],
     };
 
     private readonly List<BookMetadataExtractor> _extractors =
@@ -17,6 +18,7 @@ public sealed class EbookScannerService(Action<string, Exception>? onError = nul
         new PdfMetadataExtractor(),
         new EpubMetadataExtractor(),
         new MobiMetadataExtractor(),
+        new ChmMetadataExtractor(),
     ];
 
     /// <summary>
@@ -33,7 +35,7 @@ public sealed class EbookScannerService(Action<string, Exception>? onError = nul
     /// directory path, scan timestamp, and a collection of extracted book metadata.</returns>
     public async Task<ScanResult> ScanAsync(ScanOptions options, IProgress<ScanProgress>? progress = null, CancellationToken cancellationToken = default)
     {
-        var formats = options.Formats ?? [BookFormat.Pdf, BookFormat.Epub, BookFormat.Mobi];
+        var formats = options.Formats ?? [BookFormat.Pdf, BookFormat.Epub, BookFormat.Mobi, BookFormat.Chm];
         var extensions = formats
             .SelectMany(f => FormatExtensions[f])
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
