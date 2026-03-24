@@ -37,6 +37,11 @@ dotnet test MarkItDown.slnx
 | `ConverterPriority_Sorted` | `MarkItDownService.Converters` is returned in ascending priority order |
 | `Service_IsDisposable` | `MarkItDownService` implements `IDisposable`; `Dispose()` does not throw |
 | `BinaryMime_RejectedByPlainText` | `PlainTextConverter` does not accept `application/pdf` streams (binary MIME guard) |
+| `MobiConversion_ExtractsBookTitle` | `MobiConverter` reads the MOBI FullName field from the binary PalmDB header |
+| `MobiConversion_ProducesMarkdownFromContent` | `MobiConverter` decompresses the text record and converts the HTML body to Markdown |
+| `MobiConverter_AcceptsMobiExtension` | `MobiConverter.Accepts()` returns `true` for `.mobi` extension |
+| `MobiConverter_AcceptsAzwExtension` | `MobiConverter.Accepts()` returns `true` for `.azw` extension |
+| `MobiConverter_AcceptsMobiMimeType` | `MobiConverter.Accepts()` returns `true` for `application/x-mobipocket-ebook` MIME type |
 
 ---
 

@@ -16,7 +16,7 @@ The solution ships as three focused projects: a portable core library, a Native 
 
 | Project | Description |
 |---|---|
-| [`MarkItDown.Core`](MarkItDown.Core/README.md) | Converter library — models, 13 converters, `MarkItDownService` |
+| [`MarkItDown.Core`](MarkItDown.Core/README.md) | Converter library — models, 14 converters, `MarkItDownService` |
 | [`MarkItDown.Cli`](MarkItDown.Cli/README.md) | Command-line tool + MCP server (`mcp` subcommand), Native AOT enabled |
 | [`MarkItDown.Tests`](MarkItDown.Tests/README.md) | xUnit integration tests |
 
@@ -36,6 +36,7 @@ The solution ships as three focused projects: a portable core library, a Native 
 | Images (EXIF/metadata) | `ImageConverter` | MetadataExtractor |
 | ZIP (recursive) | `ZipConverter` | BCL `System.IO.Compression` |
 | EPUB | `EpubConverter` | VersOne.Epub |
+| MOBI / AZW | `MobiConverter` | *(built-in parser — no extra dependency)* |
 | RSS / Atom | `RssConverter` | System.ServiceModel.Syndication |
 | Wikipedia URLs | `WikipediaConverter` | HtmlAgilityPack, ReverseMarkdown |
 | YouTube URLs | `YouTubeConverter` | HtmlAgilityPack |

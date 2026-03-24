@@ -500,6 +500,59 @@ public sealed class ConverterTests : IDisposable
         Assert.Contains("Hello EPUB", result.Markdown);
     }
 
+    // ── MOBI ──────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task MobiConversion_ExtractsBookTitle()
+    {
+        await using var stream = TestDocumentFactory.CreateMobiStream(title: "My MOBI Book");
+
+        var result = await ConvertStreamAsync(
+            stream,
+            new StreamInfo(FileName: "book.mobi", Extension: ".mobi"));
+
+        Assert.Equal("My MOBI Book", result.Title);
+    }
+
+    [Fact]
+    public async Task MobiConversion_ProducesMarkdownFromContent()
+    {
+        await using var stream = TestDocumentFactory.CreateMobiStream(
+            bodyHtml: "<html><body><h1>Hello MOBI</h1><p>Test content.</p></body></html>");
+
+        var result = await ConvertStreamAsync(
+            stream,
+            new StreamInfo(FileName: "book.mobi", Extension: ".mobi"));
+
+        Assert.Contains("Hello MOBI", result.Markdown);
+        Assert.Contains("Test content", result.Markdown);
+    }
+
+    [Fact]
+    public void MobiConverter_AcceptsMobiExtension()
+    {
+        var converter = new MobiConverter();
+        using var stream = new MemoryStream();
+        Assert.True(converter.Accepts(stream, new StreamInfo(Extension: ".mobi")));
+    }
+
+    [Fact]
+    public void MobiConverter_AcceptsAzwExtension()
+    {
+        var converter = new MobiConverter();
+        using var stream = new MemoryStream();
+        Assert.True(converter.Accepts(stream, new StreamInfo(Extension: ".azw")));
+    }
+
+    [Fact]
+    public void MobiConverter_AcceptsMobiMimeType()
+    {
+        var converter = new MobiConverter();
+        using var stream = new MemoryStream();
+        Assert.True(converter.Accepts(stream,
+            new StreamInfo(MimeType: "application/x-mobipocket-ebook")));
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static MemoryStream CreateZipStream(Action<ZipArchive> configure)

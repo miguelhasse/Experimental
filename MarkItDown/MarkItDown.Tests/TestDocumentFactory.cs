@@ -265,6 +265,93 @@ internal static class TestDocumentFactory
         return new MemoryStream(bmp);
     }
 
+    // ── MOBI ─────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Creates a minimal MOBI file (PalmDB + PalmDoc, uncompressed, UTF-8) with one text record.
+    /// </summary>
+    internal static MemoryStream CreateMobiStream(
+        string title = "Test Book",
+        string bodyHtml = "<html><head><title>Test Book</title></head><body><h1>Hello MOBI</h1><p>Test content.</p></body></html>")
+    {
+        var titleBytes   = Encoding.UTF8.GetBytes(title);
+        var contentBytes = Encoding.UTF8.GetBytes(bodyHtml);
+
+        // Fixed layout (2 records: header record + 1 text record):
+        //   [0-77]   PalmDB header
+        //   [78-93]  Record list (2 × 8 bytes)
+        //   [94-95]  2-byte gap
+        //   [96 ..]  Record 0: PalmDoc header (16) + MOBI header (232) + FullName
+        //   [96+248+titleLen ..] Record 1: raw content bytes
+        const int record0Start   = 96;
+        const int fullNameOffset = 248; // 16 (PalmDoc) + 232 (MOBI)
+
+        var record0Size  = fullNameOffset + titleBytes.Length;
+        var record1Start = record0Start + record0Size;
+        var totalSize    = record1Start + contentBytes.Length;
+
+        var buf = new byte[totalSize];
+
+        // PalmDB name [0-31]: title, null-padded
+        var nameLen = Math.Min(titleBytes.Length, 31);
+        Array.Copy(titleBytes, buf, nameLen);
+
+        // Type "BOOK" [60-63], Creator "MOBI" [64-67]
+        buf[60] = (byte)'B'; buf[61] = (byte)'O'; buf[62] = (byte)'O'; buf[63] = (byte)'K';
+        buf[64] = (byte)'M'; buf[65] = (byte)'O'; buf[66] = (byte)'B'; buf[67] = (byte)'I';
+
+        // NumRecords [76-77] = 2
+        buf[76] = 0; buf[77] = 2;
+
+        // Record list: record 0 at offset 96, record 1 at offset record1Start
+        WriteU32BE(buf, 78, (uint)record0Start);
+        WriteU32BE(buf, 86, (uint)record1Start);
+        buf[91] = 1; // unique ID for record 1
+
+        // PalmDoc header [96-111]
+        WriteU16BE(buf, 96, 1);                           // compression = 1 (none)
+        WriteU32BE(buf, 100, (uint)contentBytes.Length);  // text length
+        WriteU16BE(buf, 104, 1);                          // record count = 1
+        WriteU16BE(buf, 106, 4096);                       // record size
+
+        // MOBI header [112-343] (MOBI identifier at record0 +16)
+        buf[112] = (byte)'M'; buf[113] = (byte)'O'; buf[114] = (byte)'B'; buf[115] = (byte)'I';
+        WriteU32BE(buf, 116, 232);          // header length
+        WriteU32BE(buf, 120, 2);            // type: Mobipocket book
+        WriteU32BE(buf, 124, 65001);        // text encoding: UTF-8
+        WriteU32BE(buf, 132, 6);            // file version: 6
+
+        // Optional indexes (0xFFFFFFFF = absent)
+        for (var off = 136; off <= 172; off += 4)
+            WriteU32BE(buf, off, 0xFFFFFFFF);
+
+        WriteU32BE(buf, 176, 2);                           // first non-book index = record 2
+        WriteU32BE(buf, 180, (uint)fullNameOffset);        // FullNameOffset (from record 0 start)
+        WriteU32BE(buf, 184, (uint)titleBytes.Length);     // FullNameLength
+
+        // FullName at record0Start + fullNameOffset = 96 + 248 = 344
+        Array.Copy(titleBytes, 0, buf, record0Start + fullNameOffset, titleBytes.Length);
+
+        // Record 1: raw content
+        Array.Copy(contentBytes, 0, buf, record1Start, contentBytes.Length);
+
+        return new MemoryStream(buf);
+    }
+
+    private static void WriteU32BE(byte[] buf, int offset, uint value)
+    {
+        buf[offset]     = (byte)(value >> 24);
+        buf[offset + 1] = (byte)(value >> 16);
+        buf[offset + 2] = (byte)(value >> 8);
+        buf[offset + 3] = (byte)value;
+    }
+
+    private static void WriteU16BE(byte[] buf, int offset, ushort value)
+    {
+        buf[offset]     = (byte)(value >> 8);
+        buf[offset + 1] = (byte)value;
+    }
+
     private static void AddEntry(ZipArchive archive, string name, string content)
     {
         var entry = archive.CreateEntry(name);

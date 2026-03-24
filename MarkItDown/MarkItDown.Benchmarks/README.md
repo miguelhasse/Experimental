@@ -2,7 +2,7 @@
 
 Performance benchmarks for `MarkItDown.Core` using [BenchmarkDotNet](https://benchmarkdotnet.org/).
 
-**Target:** `net10.0` · **BenchmarkDotNet:** 0.14.0
+**Target:** `net10.0` · **BenchmarkDotNet:** 0.15.8
 
 ---
 
@@ -45,6 +45,7 @@ Results are written to `BenchmarkDotNet.Artifacts/` in the project directory.
 | `ZipBenchmarks` | `Zip` | `ZipConverter` — recursive conversion, 3 vs 20 entries |
 | `RssBenchmarks` | `Rss` | `RssConverter` — SyndicationFeed parse, 5 vs 100 items |
 | `EpubBenchmarks` | `Epub` | `EpubConverter` — VersOne.Epub parse, 2 vs 15 chapters |
+| `MobiBenchmarks` | `Mobi` | `MobiConverter` — PalmDB parse + PalmDoc decode, 2 vs 10 sections |
 | `ServiceBenchmarks` | `Service` | Full end-to-end pipeline across all major formats (dispatch + conversion) side-by-side |
 
 ---
@@ -63,6 +64,7 @@ All test data is generated **in-memory** by `TestData/TestDataFactory.cs` during
 | Image (BMP) | Hardcoded 1×1 white BMP (58 bytes) |
 | ZIP | `ZipArchive` with plain-text entries |
 | EPUB | `ZipArchive` with EPUB 2 container structure |
+| MOBI | PalmDB binary assembled in-memory with PalmDoc header and uncompressed text record |
 
 ---
 

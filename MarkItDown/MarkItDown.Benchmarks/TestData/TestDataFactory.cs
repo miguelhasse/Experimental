@@ -452,4 +452,87 @@ public static class TestDataFactory
             writer.Write(content);
         }
     }
+
+    // -------------------------------------------------------------------------
+    // MOBI  (minimal PalmDB + PalmDoc, uncompressed, 2 records)
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Generates a minimal valid MOBI file with the specified number of HTML sections
+    /// packed into a single PalmDoc text record (uncompressed, UTF-8).
+    /// </summary>
+    public static byte[] CreateMobi(int sections = 3)
+    {
+        var html = new StringBuilder();
+        html.Append("<html><head><title>Benchmark Book</title></head><body>");
+        for (var i = 1; i <= sections; i++)
+        {
+            html.Append($"<h1>Chapter {i}</h1>");
+            html.Append($"<p>The quick brown fox jumps over the lazy dog. " +
+                        $"This is benchmark chapter {i} with sample MOBI content.</p>");
+        }
+        html.Append("</body></html>");
+
+        const string title = "Benchmark Book";
+        var titleBytes   = Encoding.UTF8.GetBytes(title);
+        var contentBytes = Encoding.UTF8.GetBytes(html.ToString());
+
+        // Layout matches TestDocumentFactory.CreateMobiStream (2 records, no compression).
+        const int record0Start   = 96;
+        const int fullNameOffset = 248; // 16 (PalmDoc) + 232 (MOBI)
+
+        var record0Size  = fullNameOffset + titleBytes.Length;
+        var record1Start = record0Start + record0Size;
+        var totalSize    = record1Start + contentBytes.Length;
+
+        var buf = new byte[totalSize];
+
+        var nameLen = Math.Min(titleBytes.Length, 31);
+        Array.Copy(titleBytes, buf, nameLen);
+
+        buf[60] = (byte)'B'; buf[61] = (byte)'O'; buf[62] = (byte)'O'; buf[63] = (byte)'K';
+        buf[64] = (byte)'M'; buf[65] = (byte)'O'; buf[66] = (byte)'B'; buf[67] = (byte)'I';
+        buf[76] = 0; buf[77] = 2; // NumRecords = 2
+
+        WriteU32BE(buf, 78, (uint)record0Start);
+        WriteU32BE(buf, 86, (uint)record1Start);
+        buf[91] = 1;
+
+        WriteU16BE(buf, 96, 1);                           // compression = none
+        WriteU32BE(buf, 100, (uint)contentBytes.Length);  // text length
+        WriteU16BE(buf, 104, 1);                          // record count
+        WriteU16BE(buf, 106, 4096);                       // record size
+
+        buf[112] = (byte)'M'; buf[113] = (byte)'O'; buf[114] = (byte)'B'; buf[115] = (byte)'I';
+        WriteU32BE(buf, 116, 232);
+        WriteU32BE(buf, 120, 2);
+        WriteU32BE(buf, 124, 65001);
+        WriteU32BE(buf, 132, 6);
+
+        for (var off = 136; off <= 172; off += 4)
+            WriteU32BE(buf, off, 0xFFFFFFFF);
+
+        WriteU32BE(buf, 176, 2);
+        WriteU32BE(buf, 180, (uint)fullNameOffset);
+        WriteU32BE(buf, 184, (uint)titleBytes.Length);
+
+        Array.Copy(titleBytes, 0, buf, record0Start + fullNameOffset, titleBytes.Length);
+        Array.Copy(contentBytes, 0, buf, record1Start, contentBytes.Length);
+
+        return buf;
+    }
+
+    private static void WriteU32BE(byte[] buf, int offset, uint value)
+    {
+        buf[offset]     = (byte)(value >> 24);
+        buf[offset + 1] = (byte)(value >> 16);
+        buf[offset + 2] = (byte)(value >> 8);
+        buf[offset + 3] = (byte)value;
+    }
+
+    private static void WriteU16BE(byte[] buf, int offset, ushort value)
+    {
+        buf[offset]     = (byte)(value >> 8);
+        buf[offset + 1] = (byte)value;
+    }
 }
