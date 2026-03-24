@@ -77,22 +77,60 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         var parsed = new List<BookFormat>();
         foreach (var fmt in include)
         {
-            if (Enum.TryParse<BookFormat>(fmt, ignoreCase: true, out var bf))
-                parsed.Add(bf);
-            else
+            if (!Enum.TryParse<BookFormat>(fmt, ignoreCase: true, out var bf))
+            {
+                var originalColor = Console.ForegroundColor;
+                Console.ForegroundColor = ConsoleColor.Yellow;
                 Console.Error.WriteLine($"warning: unknown format '{fmt}' ignored.");
+                Console.ForegroundColor = originalColor;
+            }
+            else parsed.Add(bf);
         }
         formats = parsed.Count > 0 ? parsed.ToArray() : null;
     }
 
-    var options = new ScanOptions(
-        Directory: directory,
-        Recursive: recursive,
-        Formats: formats);
+    ScanResult result;
+    string? lastProgressLine = null;
 
-    var service = new EbookScannerService(onError: (file, ex) => Console.Error.WriteLine($"warning: {file}: {ex.Message}"));
-    var scanProgress = new Progress<ScanProgress>(p => Console.Out.WriteLine($"[{p.Current}/{p.Total}] {p.FilePath}"));
-    var result = await service.ScanAsync(options, scanProgress, cancellationToken);
+    var service = new EbookScannerService(onError: (file, ex) =>
+    {
+        var warning = !Console.IsOutputRedirected && lastProgressLine is not null
+            ? $"\rwarning: {file}: {ex.Message}"
+            : $"warning: {file}: {ex.Message}";
+        var originalColor = Console.ForegroundColor;
+
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.Error.WriteLine(warning);
+        Console.ForegroundColor = originalColor;
+        lastProgressLine = null;
+    });
+
+    var scanProgress = new Progress<ScanProgress>(p =>
+    {
+        if (!Console.IsOutputRedirected)
+        {
+            var line = $"[{p.Current}/{p.Total}] {Path.GetFileName(p.FilePath)}";
+            Console.Write($"\r{line.PadRight(Math.Min(lastProgressLine?.Length ?? 0, Console.WindowWidth))}");
+            lastProgressLine = line;
+        }
+    });
+
+    if (!Console.IsOutputRedirected)
+        Console.CursorVisible = false;
+
+    try
+    {
+        var options = new ScanOptions(directory, recursive, formats);
+        result = await service.ScanAsync(options, scanProgress, cancellationToken);
+    }
+    finally
+    {
+        if (!Console.IsOutputRedirected)
+            Console.CursorVisible = true;
+    }
+
+    if (lastProgressLine is not null)
+        Console.Write($"\r{new string(' ', Math.Min(lastProgressLine.Length, Console.WindowWidth))}\r");
 
     IMetadataFormatter formatter = format.ToLowerInvariant() switch
     {

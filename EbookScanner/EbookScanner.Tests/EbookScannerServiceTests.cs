@@ -13,7 +13,7 @@ public sealed class EbookScannerServiceTests
         var dir = Directory.CreateTempSubdirectory("ebookscan_");
         try
         {
-            var result = await _service.ScanAsync(new ScanOptions(dir.FullName));
+            var result = await _service.ScanAsync(new ScanOptions(dir.FullName), cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.Equal(dir.FullName, result.ScannedDirectory);
             Assert.Empty(result.Books);
@@ -31,9 +31,9 @@ public sealed class EbookScannerServiceTests
         try
         {
             var sub = dir.CreateSubdirectory("sub");
-            await File.WriteAllTextAsync(Path.Combine(sub.FullName, "nested.pdf"), "not a real pdf");
+            await File.WriteAllTextAsync(Path.Combine(sub.FullName, "nested.pdf"), "not a real pdf", TestContext.Current.CancellationToken);
 
-            var result = await _service.ScanAsync(new ScanOptions(dir.FullName, Recursive: false));
+            var result = await _service.ScanAsync(new ScanOptions(dir.FullName, Recursive: false), cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.Empty(result.Books);
         }
@@ -51,11 +51,9 @@ public sealed class EbookScannerServiceTests
         {
             var sub = dir.CreateSubdirectory("sub");
             // Write a minimal valid PDF header so PdfPig doesn't crash
-            await File.WriteAllBytesAsync(
-                Path.Combine(sub.FullName, "nested.pdf"),
-                "%PDF-1.4\n%%EOF"u8.ToArray());
+            await File.WriteAllBytesAsync(Path.Combine(sub.FullName, "nested.pdf"), "%PDF-1.4\n%%EOF"u8.ToArray(), TestContext.Current.CancellationToken);
 
-            var result = await _service.ScanAsync(new ScanOptions(dir.FullName, Recursive: true));
+            var result = await _service.ScanAsync(new ScanOptions(dir.FullName, Recursive: true), cancellationToken: TestContext.Current.CancellationToken);
 
             // The file should be found (metadata extraction may fail gracefully for minimal PDF)
             Assert.True(result.Books.Count >= 0); // at minimum, no exception
@@ -72,10 +70,9 @@ public sealed class EbookScannerServiceTests
         var dir = Directory.CreateTempSubdirectory("ebookscan_");
         try
         {
-            await File.WriteAllTextAsync(Path.Combine(dir.FullName, "book.epub"), "fake epub");
+            await File.WriteAllTextAsync(Path.Combine(dir.FullName, "book.epub"), "fake epub", TestContext.Current.CancellationToken);
 
-            var result = await _service.ScanAsync(
-                new ScanOptions(dir.FullName, Formats: [BookFormat.Pdf]));
+            var result = await _service.ScanAsync(new ScanOptions(dir.FullName, Formats: [BookFormat.Pdf]), cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.Empty(result.Books);
         }
@@ -96,9 +93,9 @@ public sealed class EbookScannerServiceTests
         try
         {
             var filePath = Path.Combine(dir.FullName, "corrupt.epub");
-            await File.WriteAllTextAsync(filePath, "this is not valid epub content");
+            await File.WriteAllTextAsync(filePath, "this is not valid epub content", TestContext.Current.CancellationToken);
 
-            var result = await service.ScanAsync(new ScanOptions(dir.FullName));
+            var result = await service.ScanAsync(new ScanOptions(dir.FullName), cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.Empty(result.Books);
             Assert.Single(errors);
@@ -112,7 +109,7 @@ public sealed class EbookScannerServiceTests
     [Fact]
     public async Task ExtractAsync_UnknownExtension_ReturnsNull()
     {
-        var result = await _service.ExtractAsync("/path/to/file.docx");
+        var result = await _service.ExtractAsync("/path/to/file.docx", TestContext.Current.CancellationToken);
         Assert.Null(result);
     }
 
@@ -122,7 +119,7 @@ public sealed class EbookScannerServiceTests
         var dir = Directory.CreateTempSubdirectory("ebookscan_");
         try
         {
-            var result = await _service.ScanAsync(new ScanOptions(dir.FullName));
+            var result = await _service.ScanAsync(new ScanOptions(dir.FullName), cancellationToken: TestContext.Current.CancellationToken);
             Assert.Equal(Path.GetFullPath(dir.FullName), result.ScannedDirectory);
         }
         finally
@@ -137,16 +134,16 @@ public sealed class EbookScannerServiceTests
         var dir = Directory.CreateTempSubdirectory("ebookscan_");
         try
         {
-            await File.WriteAllTextAsync(Path.Combine(dir.FullName, "a.epub"), "fake epub");
-            await File.WriteAllTextAsync(Path.Combine(dir.FullName, "b.epub"), "fake epub");
+            await File.WriteAllTextAsync(Path.Combine(dir.FullName, "a.epub"), "fake epub", TestContext.Current.CancellationToken);
+            await File.WriteAllTextAsync(Path.Combine(dir.FullName, "b.epub"), "fake epub", TestContext.Current.CancellationToken);
 
             var reports = new List<ScanProgress>();
             var progress = new Progress<ScanProgress>(p => reports.Add(p));
 
-            await _service.ScanAsync(new ScanOptions(dir.FullName), progress: progress);
+            await _service.ScanAsync(new ScanOptions(dir.FullName), progress: progress, cancellationToken: TestContext.Current.CancellationToken);
 
             // Progress<T> dispatches on the synchronization context; give it a tick to flush.
-            await Task.Delay(50);
+            await Task.Delay(50, TestContext.Current.CancellationToken);
 
             Assert.Equal(2, reports.Count);
         }
@@ -162,15 +159,15 @@ public sealed class EbookScannerServiceTests
         var dir = Directory.CreateTempSubdirectory("ebookscan_");
         try
         {
-            await File.WriteAllTextAsync(Path.Combine(dir.FullName, "a.epub"), "fake epub");
-            await File.WriteAllTextAsync(Path.Combine(dir.FullName, "b.epub"), "fake epub");
-            await File.WriteAllTextAsync(Path.Combine(dir.FullName, "c.epub"), "fake epub");
+            await File.WriteAllTextAsync(Path.Combine(dir.FullName, "a.epub"), "fake epub", TestContext.Current.CancellationToken);
+            await File.WriteAllTextAsync(Path.Combine(dir.FullName, "b.epub"), "fake epub", TestContext.Current.CancellationToken);
+            await File.WriteAllTextAsync(Path.Combine(dir.FullName, "c.epub"), "fake epub", TestContext.Current.CancellationToken);
 
             var reports = new List<ScanProgress>();
             var progress = new Progress<ScanProgress>(p => reports.Add(p));
 
-            await _service.ScanAsync(new ScanOptions(dir.FullName), progress: progress);
-            await Task.Delay(50);
+            await _service.ScanAsync(new ScanOptions(dir.FullName), progress: progress, cancellationToken: TestContext.Current.CancellationToken);
+            await Task.Delay(50, TestContext.Current.CancellationToken);
 
             Assert.Equal(3, reports.Count);
             Assert.Equal(3, reports[0].Total);
@@ -191,13 +188,13 @@ public sealed class EbookScannerServiceTests
         try
         {
             var filePath = Path.Combine(dir.FullName, "book.epub");
-            await File.WriteAllTextAsync(filePath, "fake epub");
+            await File.WriteAllTextAsync(filePath, "fake epub", TestContext.Current.CancellationToken);
 
             var reports = new List<ScanProgress>();
             var progress = new Progress<ScanProgress>(p => reports.Add(p));
 
-            await _service.ScanAsync(new ScanOptions(dir.FullName), progress: progress);
-            await Task.Delay(50);
+            await _service.ScanAsync(new ScanOptions(dir.FullName), progress: progress, cancellationToken: TestContext.Current.CancellationToken);
+            await Task.Delay(50, TestContext.Current.CancellationToken);
 
             Assert.Single(reports);
             Assert.Equal(filePath, reports[0].FilePath);
@@ -214,14 +211,14 @@ public sealed class EbookScannerServiceTests
         var dir = Directory.CreateTempSubdirectory("ebookscan_");
         try
         {
-            await File.WriteAllTextAsync(Path.Combine(dir.FullName, "readme.txt"), "text file");
-            await File.WriteAllTextAsync(Path.Combine(dir.FullName, "book.epub"), "fake epub");
+            await File.WriteAllTextAsync(Path.Combine(dir.FullName, "readme.txt"), "text file", TestContext.Current.CancellationToken);
+            await File.WriteAllTextAsync(Path.Combine(dir.FullName, "book.epub"), "fake epub", TestContext.Current.CancellationToken);
 
             var reports = new List<ScanProgress>();
             var progress = new Progress<ScanProgress>(p => reports.Add(p));
 
-            await _service.ScanAsync(new ScanOptions(dir.FullName), progress: progress);
-            await Task.Delay(50);
+            await _service.ScanAsync(new ScanOptions(dir.FullName), progress: progress, cancellationToken: TestContext.Current.CancellationToken);
+            await Task.Delay(50, TestContext.Current.CancellationToken);
 
             // Only the .epub should trigger progress; .txt is not a recognised ebook format
             Assert.Single(reports);
@@ -239,14 +236,14 @@ public sealed class EbookScannerServiceTests
         try
         {
             // corrupt epub – extractor will throw, but progress should still fire
-            await File.WriteAllTextAsync(Path.Combine(dir.FullName, "bad.epub"), "not valid");
+            await File.WriteAllTextAsync(Path.Combine(dir.FullName, "bad.epub"), "not valid", TestContext.Current.CancellationToken);
 
             var reports = new List<ScanProgress>();
             var progress = new Progress<ScanProgress>(p => reports.Add(p));
 
             var service = new EbookScannerService(onError: (_, _) => { });
-            await service.ScanAsync(new ScanOptions(dir.FullName), progress: progress);
-            await Task.Delay(50);
+            await service.ScanAsync(new ScanOptions(dir.FullName), progress: progress, cancellationToken: TestContext.Current.CancellationToken);
+            await Task.Delay(50, TestContext.Current.CancellationToken);
 
             Assert.Single(reports);
         }
@@ -262,10 +259,10 @@ public sealed class EbookScannerServiceTests
         var dir = Directory.CreateTempSubdirectory("ebookscan_");
         try
         {
-            await File.WriteAllTextAsync(Path.Combine(dir.FullName, "book.epub"), "fake epub");
+            await File.WriteAllTextAsync(Path.Combine(dir.FullName, "book.epub"), "fake epub", TestContext.Current.CancellationToken);
             // Passing null explicitly — should be a no-op
             var ex = await Record.ExceptionAsync(() =>
-                _service.ScanAsync(new ScanOptions(dir.FullName), progress: null));
+                _service.ScanAsync(new ScanOptions(dir.FullName), progress: null, cancellationToken: TestContext.Current.CancellationToken));
             Assert.Null(ex);
         }
         finally

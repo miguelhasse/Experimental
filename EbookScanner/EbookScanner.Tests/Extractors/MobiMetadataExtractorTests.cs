@@ -35,7 +35,7 @@ public sealed class MobiMetadataExtractorTests
         var filePath = CreateMinimalMobiFile("My MOBI Book", "Jane Doe");
         try
         {
-            var metadata = await _extractor.ExtractAsync(filePath);
+            var metadata = await _extractor.ExtractAsync(filePath, TestContext.Current.CancellationToken);
 
             Assert.Equal("My MOBI Book", metadata.Title);
         }
@@ -51,7 +51,7 @@ public sealed class MobiMetadataExtractorTests
         var filePath = CreateMinimalMobiFile("Book Title", "John Smith");
         try
         {
-            var metadata = await _extractor.ExtractAsync(filePath);
+            var metadata = await _extractor.ExtractAsync(filePath, TestContext.Current.CancellationToken);
 
             Assert.NotNull(metadata.Authors);
             Assert.Contains("John Smith", metadata.Authors);
@@ -68,7 +68,7 @@ public sealed class MobiMetadataExtractorTests
         var filePath = CreateMinimalMobiFile("Title", "Author");
         try
         {
-            var metadata = await _extractor.ExtractAsync(filePath);
+            var metadata = await _extractor.ExtractAsync(filePath, TestContext.Current.CancellationToken);
 
             Assert.Equal("MOBI", metadata.Format);
         }
@@ -84,7 +84,7 @@ public sealed class MobiMetadataExtractorTests
         var filePath = CreateMinimalMobiFile("Title", "Author");
         try
         {
-            var metadata = await _extractor.ExtractAsync(filePath);
+            var metadata = await _extractor.ExtractAsync(filePath, TestContext.Current.CancellationToken);
 
             Assert.Equal(Path.GetFileName(filePath), metadata.FileName);
         }
@@ -101,10 +101,10 @@ public sealed class MobiMetadataExtractorTests
         // Write a PalmDB name then truncate — should not throw
         var bytes = new byte[32];
         "Fallback Title\0"u8.TryCopyTo(bytes);
-        await File.WriteAllBytesAsync(filePath, bytes);
+        await File.WriteAllBytesAsync(filePath, bytes, TestContext.Current.CancellationToken);
         try
         {
-            var metadata = await _extractor.ExtractAsync(filePath);
+            var metadata = await _extractor.ExtractAsync(filePath, TestContext.Current.CancellationToken);
             Assert.Equal("MOBI", metadata.Format);
         }
         finally
