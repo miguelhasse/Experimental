@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="EbookScanner.Core/EbookScanner.Core.csproj" />
+  <Project Path="EbookScanner.Cli/EbookScanner.Cli.csproj" />
+  <Project Path="EbookScanner.Tests/EbookScanner.Tests.csproj" />
+</Solution>

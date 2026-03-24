@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 590" width="880" height="590"
+     font-family="'Segoe UI', system-ui, -apple-system, sans-serif">
+
+  <!-- ── Background ───────────────────────────────────────────────────────── -->
+  <rect width="880" height="590" fill="#F8FAFC" rx="14"/>
+
+  <!-- ── Title ─────────────────────────────────────────────────────────────── -->
+  <text x="440" y="44" text-anchor="middle" font-size="20" font-weight="700" fill="#0F172A"
+        letter-spacing="-0.3">EbookScanner — Solution Architecture</text>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!-- EbookScanner.Core  (right, full-height)                                 -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <rect x="438" y="68" width="410" height="418" rx="10" fill="#EFF6FF" stroke="#3B82F6" stroke-width="2"/>
+  <!-- header pill -->
+  <rect x="438" y="68" width="410" height="38" rx="10" fill="#3B82F6"/>
+  <rect x="438" y="88"  width="410" height="18" fill="#3B82F6"/>
+  <text x="643" y="92" text-anchor="middle" font-size="14" font-weight="700" fill="white"
+        letter-spacing="0.3">EbookScanner.Core</text>
+
+  <!-- EbookScannerService -->
+  <rect x="458" y="120" width="370" height="46" rx="6" fill="white" stroke="#BFDBFE" stroke-width="1.5"/>
+  <text x="643" y="140" text-anchor="middle" font-size="13" font-weight="600" fill="#1D4ED8">EbookScannerService</text>
+  <text x="643" y="157" text-anchor="middle" font-size="11" fill="#64748B">ScanAsync(ScanOptions)  ·  ExtractAsync(filePath)</text>
+
+  <!-- Models box -->
+  <rect x="458" y="180" width="172" height="108" rx="6" fill="white" stroke="#BFDBFE" stroke-width="1.5"/>
+  <text x="544" y="198" text-anchor="middle" font-size="12" font-weight="600" fill="#1D4ED8">Models</text>
+  <text x="470" y="215" font-size="11" fill="#475569">• BookMetadata</text>
+  <text x="470" y="231" font-size="11" fill="#475569">• ScanOptions</text>
+  <text x="470" y="247" font-size="11" fill="#475569">• ScanResult</text>
+  <text x="470" y="263" font-size="11" fill="#94A3B8">• BookFormat (enum)</text>
+
+  <!-- Formatters box -->
+  <rect x="638" y="180" width="190" height="108" rx="6" fill="white" stroke="#BFDBFE" stroke-width="1.5"/>
+  <text x="733" y="198" text-anchor="middle" font-size="12" font-weight="600" fill="#1D4ED8">Formatters</text>
+  <text x="650" y="215" font-size="11" fill="#475569">• IMetadataFormatter</text>
+  <text x="650" y="231" font-size="11" fill="#475569">• MarkdownFormatter</text>
+  <text x="650" y="247" font-size="11" fill="#475569">• JsonFormatter</text>
+
+  <!-- Extractors group -->
+  <rect x="458" y="302" width="370" height="166" rx="6" fill="white" stroke="#BFDBFE" stroke-width="1.5"/>
+  <text x="643" y="321" text-anchor="middle" font-size="12" font-weight="600" fill="#1D4ED8">Extractors</text>
+
+  <!-- PDF card -->
+  <rect x="468" y="330" width="106" height="124" rx="5" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="1"/>
+  <text x="521" y="347" text-anchor="middle" font-size="11" font-weight="600" fill="#1E40AF">PDF</text>
+  <line x1="468" y1="352" x2="574" y2="352" stroke="#E2E8F0" stroke-width="1"/>
+  <text x="521" y="368" text-anchor="middle" font-size="10" fill="#475569">PdfMetadata</text>
+  <text x="521" y="381" text-anchor="middle" font-size="10" fill="#475569">Extractor</text>
+  <text x="521" y="400" text-anchor="middle" font-size="10" fill="#94A3B8">UglyToad</text>
+  <text x="521" y="413" text-anchor="middle" font-size="10" fill="#94A3B8">.PdfPig</text>
+  <text x="521" y="429" text-anchor="middle" font-size="10" fill="#94A3B8">1.7.0-custom-5</text>
+  <text x="521" y="443" text-anchor="middle" font-size="10" fill="#94A3B8">↑ package</text>
+
+  <!-- EPUB card -->
+  <rect x="584" y="330" width="106" height="124" rx="5" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="1"/>
+  <text x="637" y="347" text-anchor="middle" font-size="11" font-weight="600" fill="#1E40AF">EPUB</text>
+  <line x1="584" y1="352" x2="690" y2="352" stroke="#E2E8F0" stroke-width="1"/>
+  <text x="637" y="368" text-anchor="middle" font-size="10" fill="#475569">EpubMetadata</text>
+  <text x="637" y="381" text-anchor="middle" font-size="10" fill="#475569">Extractor</text>
+  <text x="637" y="400" text-anchor="middle" font-size="10" fill="#94A3B8">VersOne</text>
+  <text x="637" y="413" text-anchor="middle" font-size="10" fill="#94A3B8">.Epub</text>
+  <text x="637" y="429" text-anchor="middle" font-size="10" fill="#94A3B8">3.3.6</text>
+  <text x="637" y="443" text-anchor="middle" font-size="10" fill="#94A3B8">↑ package</text>
+
+  <!-- MOBI card -->
+  <rect x="700" y="330" width="118" height="124" rx="5" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="1"/>
+  <text x="759" y="347" text-anchor="middle" font-size="11" font-weight="600" fill="#1E40AF">MOBI / AZW</text>
+  <line x1="700" y1="352" x2="818" y2="352" stroke="#E2E8F0" stroke-width="1"/>
+  <text x="759" y="368" text-anchor="middle" font-size="10" fill="#475569">MobiMetadata</text>
+  <text x="759" y="381" text-anchor="middle" font-size="10" fill="#475569">Extractor</text>
+  <text x="759" y="400" text-anchor="middle" font-size="10" fill="#94A3B8">Custom Palm</text>
+  <text x="759" y="413" text-anchor="middle" font-size="10" fill="#94A3B8">DB Parser</text>
+  <text x="759" y="429" text-anchor="middle" font-size="10" fill="#94A3B8">EXTH records</text>
+  <text x="759" y="443" text-anchor="middle" font-size="10" fill="#94A3B8">(no package)</text>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!-- EbookScanner.Cli  (left top)                                            -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <rect x="32" y="68" width="370" height="225" rx="10" fill="#ECFDF5" stroke="#10B981" stroke-width="2"/>
+  <rect x="32" y="68" width="370" height="38" rx="10" fill="#10B981"/>
+  <rect x="32" y="88"  width="370" height="18" fill="#10B981"/>
+  <text x="217" y="92" text-anchor="middle" font-size="14" font-weight="700" fill="white"
+        letter-spacing="0.3">EbookScanner.Cli</text>
+
+  <!-- scan command box -->
+  <rect x="50" y="120" width="157" height="153" rx="6" fill="white" stroke="#A7F3D0" stroke-width="1.5"/>
+  <text x="128" y="139" text-anchor="middle" font-size="12" font-weight="600" fill="#065F46">scan (root command)</text>
+  <line x1="50" y1="144" x2="207" y2="144" stroke="#D1FAE5" stroke-width="1"/>
+  <text x="60" y="161" font-size="11" fill="#374151">• &lt;directory&gt; arg</text>
+  <text x="60" y="177" font-size="11" fill="#374151">• --recursive / -r</text>
+  <text x="60" y="193" font-size="11" fill="#374151">• --format md|json</text>
+  <text x="60" y="209" font-size="11" fill="#374151">• --output &lt;file&gt;</text>
+  <text x="60" y="225" font-size="11" fill="#374151">• --include formats</text>
+  <text x="60" y="246" font-size="11" fill="#94A3B8">System.CommandLine 2.0.5</text>
+
+  <!-- mcp command box -->
+  <rect x="218" y="120" width="165" height="153" rx="6" fill="white" stroke="#A7F3D0" stroke-width="1.5"/>
+  <text x="300" y="139" text-anchor="middle" font-size="12" font-weight="600" fill="#065F46">mcp (sub-command)</text>
+  <line x1="218" y1="144" x2="383" y2="144" stroke="#D1FAE5" stroke-width="1"/>
+  <text x="228" y="162" font-size="11" fill="#374151">Tools:</text>
+  <text x="228" y="178" font-size="11" fill="#374151">• scan_directory</text>
+  <text x="228" y="194" font-size="11" fill="#374151">• extract_metadata</text>
+  <text x="228" y="213" font-size="11" fill="#374151">Transports:</text>
+  <text x="228" y="229" font-size="11" fill="#374151">• stdio (default)</text>
+  <text x="228" y="245" font-size="11" fill="#374151">• HTTP / SSE</text>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!-- EbookScanner.Tests  (left bottom)                                       -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <rect x="32" y="314" width="370" height="172" rx="10" fill="#FFFBEB" stroke="#F59E0B" stroke-width="2"/>
+  <rect x="32" y="314" width="370" height="38" rx="10" fill="#F59E0B"/>
+  <rect x="32" y="334"  width="370" height="18" fill="#F59E0B"/>
+  <text x="217" y="338" text-anchor="middle" font-size="14" font-weight="700" fill="white"
+        letter-spacing="0.3">EbookScanner.Tests  (xUnit.v3 · 32 tests)</text>
+
+  <!-- Formatters tests -->
+  <rect x="50" y="366" width="157" height="100" rx="6" fill="white" stroke="#FDE68A" stroke-width="1.5"/>
+  <text x="128" y="384" text-anchor="middle" font-size="12" font-weight="600" fill="#92400E">Formatters</text>
+  <line x1="50" y1="389" x2="207" y2="389" stroke="#FEF3C7" stroke-width="1"/>
+  <text x="60" y="406" font-size="11" fill="#374151">• MarkdownFormatterTests</text>
+  <text x="60" y="422" font-size="11" fill="#374151">• JsonFormatterTests</text>
+  <text x="128" y="452" text-anchor="middle" font-size="11" fill="#92400E" font-weight="500">11 tests</text>
+
+  <!-- Core tests -->
+  <rect x="218" y="366" width="165" height="100" rx="6" fill="white" stroke="#FDE68A" stroke-width="1.5"/>
+  <text x="300" y="384" text-anchor="middle" font-size="12" font-weight="600" fill="#92400E">Extractors / Service</text>
+  <line x1="218" y1="389" x2="383" y2="389" stroke="#FEF3C7" stroke-width="1"/>
+  <text x="228" y="406" font-size="11" fill="#374151">• MobiMetadataExtractor</text>
+  <text x="228" y="422" font-size="11" fill="#374151">• EbookScannerService</text>
+  <text x="300" y="452" text-anchor="middle" font-size="11" fill="#92400E" font-weight="500">21 tests</text>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!-- Dependency arrows                                                        -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#64748B"/>
+    </marker>
+  </defs>
+
+  <!-- Cli → Core (at Cli vertical midpoint y≈181) -->
+  <line x1="403" y1="181" x2="435" y2="181"
+        stroke="#64748B" stroke-width="2" stroke-dasharray="5,3"
+        marker-end="url(#arr)"/>
+  <text x="419" y="172" text-anchor="middle" font-size="10" fill="#64748B">depends on</text>
+
+  <!-- Tests → Core (at Tests vertical midpoint y≈400) -->
+  <line x1="403" y1="400" x2="435" y2="400"
+        stroke="#64748B" stroke-width="2" stroke-dasharray="5,3"
+        marker-end="url(#arr)"/>
+  <text x="419" y="391" text-anchor="middle" font-size="10" fill="#64748B">depends on</text>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!-- Bottom: output formats strip                                             -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <rect x="32" y="508" width="816" height="58" rx="8" fill="#F1F5F9" stroke="#E2E8F0" stroke-width="1.5"/>
+  <text x="440" y="527" text-anchor="middle" font-size="11" font-weight="700" fill="#475569"
+        letter-spacing="0.5">OUTPUT FORMATS</text>
+  <text x="190" y="549" text-anchor="middle" font-size="12" fill="#374151">📄 Markdown catalog</text>
+  <text x="440" y="549" text-anchor="middle" font-size="12" fill="#374151">{ } JSON catalog</text>
+  <text x="690" y="549" text-anchor="middle" font-size="12" fill="#374151">🤖 MCP tool responses</text>
+
+</svg>
