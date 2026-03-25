@@ -173,6 +173,7 @@ public sealed class MarkItDownService : IDisposable
         RegisterConverter(new ImageConverter(), PrioritySpecific);
         RegisterConverter(new EpubConverter(), PrioritySpecific);
         RegisterConverter(new MobiConverter(), PrioritySpecific);
+        RegisterConverter(new ChmConverter(), PrioritySpecific);
         RegisterConverter(new ZipConverter(), PriorityGeneric);
         RegisterConverter(new RssConverter(), PriorityGeneric);
         RegisterConverter(new CsvConverter(), PriorityGeneric);

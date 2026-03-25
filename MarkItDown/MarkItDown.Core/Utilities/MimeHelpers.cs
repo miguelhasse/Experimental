@@ -23,6 +23,7 @@ internal static class MimeHelpers
         [".pdf"] = "application/pdf",
         [".zip"] = "application/zip",
         [".epub"] = "application/epub+zip",
+        [".chm"]  = "application/vnd.ms-htmlhelp",
         [".jpg"] = "image/jpeg",
         [".jpeg"] = "image/jpeg",
         [".png"] = "image/png",

@@ -553,6 +553,128 @@ public sealed class ConverterTests : IDisposable
             new StreamInfo(MimeType: "application/x-mobipocket-ebook")));
     }
 
+    // ── CHM ───────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ChmConverter_AcceptsByChmExtension()
+    {
+        var converter = new ChmConverter();
+        using var stream = new MemoryStream();
+        Assert.True(converter.Accepts(stream, new StreamInfo(Extension: ".chm")));
+    }
+
+    [Fact]
+    public void ChmConverter_AcceptsByMimeType()
+    {
+        var converter = new ChmConverter();
+        using var stream = new MemoryStream();
+        Assert.True(converter.Accepts(stream,
+            new StreamInfo(MimeType: "application/vnd.ms-htmlhelp")));
+    }
+
+    [Fact]
+    public void ChmConverter_AcceptsByItsfMagicBytes()
+    {
+        var converter = new ChmConverter();
+        byte[] magic = [0x49, 0x54, 0x53, 0x46, 0x00, 0x00]; // "ITSF"...
+        using var stream = new MemoryStream(magic);
+        Assert.True(converter.Accepts(stream, new StreamInfo()));
+    }
+
+    [Fact]
+    public void ChmConverter_RejectsNonChmFile()
+    {
+        var converter = new ChmConverter();
+        using var stream = new MemoryStream([0x00, 0x01, 0x02, 0x03]);
+        Assert.False(converter.Accepts(stream, new StreamInfo()));
+    }
+
+    [Fact]
+    public async Task ChmConversion_ExtractsTitle()
+    {
+        await using var stream = TestDocumentFactory.CreateChmStream(title: "My CHM Book");
+
+        var result = await ConvertStreamAsync(
+            stream,
+            new StreamInfo(FileName: "book.chm", Extension: ".chm"));
+
+        Assert.Equal("My CHM Book", result.Title);
+    }
+
+    [Fact]
+    public async Task ChmConversion_ProducesMarkdownFromHtml()
+    {
+        await using var stream = TestDocumentFactory.CreateChmStream(
+            bodyHtml: "<html><body><h1>Hello CHM</h1><p>Help content.</p></body></html>");
+
+        var result = await ConvertStreamAsync(
+            stream,
+            new StreamInfo(FileName: "help.chm", Extension: ".chm"));
+
+        Assert.Contains("Hello CHM", result.Markdown);
+        Assert.Contains("Help content", result.Markdown);
+    }
+
+    // ── CHM real-file integration ─────────────────────────────────────────────
+    // These tests run against real Microsoft Press CHM files stored locally.
+    // Each test skips automatically when the file is not present (e.g. in CI).
+
+    private const string ChmBooksFolder = @"E:\Books\Microsoft Press";
+
+    [Fact]
+    public async Task ChmRealFile_SqlServerSystemTablesMap_ProducesNonEmptyMarkdown()
+    {
+        const string fileName = "SQL Server 2000 System Tables Map.chm";
+        string path = Path.Combine(ChmBooksFolder, fileName);
+        if (!File.Exists(path)) Assert.Skip($"Real CHM test file not available: {path}");
+
+        await using var stream = File.OpenRead(path);
+        var result = await ConvertStreamAsync(
+            stream,
+            new StreamInfo(FileName: fileName, Extension: ".chm"));
+
+        Assert.False(string.IsNullOrWhiteSpace(result.Markdown),
+            "Expected non-empty markdown but the converter returned an empty result.");
+        Assert.True(result.Markdown.Length > 100,
+            $"Expected substantial markdown but got only {result.Markdown.Length} chars.");
+    }
+
+    [Fact]
+    public async Task ChmRealFile_DeployingDotNetApplications_ProducesNonEmptyMarkdown()
+    {
+        const string fileName = "Deploying .NET Applications Lifecycle Guide.chm";
+        string path = Path.Combine(ChmBooksFolder, fileName);
+        if (!File.Exists(path)) Assert.Skip($"Real CHM test file not available: {path}");
+
+        await using var stream = File.OpenRead(path);
+        var result = await ConvertStreamAsync(
+            stream,
+            new StreamInfo(FileName: fileName, Extension: ".chm"));
+
+        Assert.False(string.IsNullOrWhiteSpace(result.Markdown),
+            "Expected non-empty markdown but the converter returned an empty result.");
+        Assert.True(result.Markdown.Length > 100,
+            $"Expected substantial markdown but got only {result.Markdown.Length} chars.");
+    }
+
+    [Fact]
+    public async Task ChmRealFile_MicrosoftDotNetRemoting_ProducesNonEmptyMarkdown()
+    {
+        const string fileName = "Microsoft .NET Remoting.chm";
+        string path = Path.Combine(ChmBooksFolder, fileName);
+        if (!File.Exists(path)) Assert.Skip($"Real CHM test file not available: {path}");
+
+        await using var stream = File.OpenRead(path);
+        var result = await ConvertStreamAsync(
+            stream,
+            new StreamInfo(FileName: fileName, Extension: ".chm"));
+
+        Assert.False(string.IsNullOrWhiteSpace(result.Markdown),
+            "Expected non-empty markdown but the converter returned an empty result.");
+        Assert.True(result.Markdown.Length > 100,
+            $"Expected substantial markdown but got only {result.Markdown.Length} chars.");
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static MemoryStream CreateZipStream(Action<ZipArchive> configure)

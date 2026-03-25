@@ -358,4 +358,185 @@ internal static class TestDocumentFactory
         using var writer = new StreamWriter(entry.Open(), Encoding.UTF8);
         writer.Write(content);
     }
+
+    // ── CHM ──────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Builds a minimal but structurally valid CHM file (ITSF v3, single HTML page in
+    /// section 0 — uncompressed) so that the CHM converter tests have no LZX dependency.
+    /// </summary>
+    internal static MemoryStream CreateChmStream(
+        string title   = "Test CHM",
+        string bodyHtml = "<html><head><title>Test CHM</title></head><body><h1>Hello CHM</h1><p>CHM content.</p></body></html>")
+    {
+        // ── Encode all the data we'll need ────────────────────────────────────
+        var titleBytes   = Encoding.Default.GetBytes(title + "\0");
+        var htmlBytes    = Encoding.UTF8.GetBytes(bodyHtml);
+        var htmlFilePath = "/index.html";
+        var htmlPathBytes = Encoding.UTF8.GetBytes(htmlFilePath);
+
+        // ── #SYSTEM file (tag 3 = window title) ───────────────────────────────
+        // Layout: 4-byte version + (tag=3, len=titleBytes.Length, titleBytes)
+        var sysData = new byte[4 + 4 + titleBytes.Length];
+        WriteU32LE(sysData, 0, 3);                                     // version = 3
+        WriteU16LE(sysData, 4, 3);                                     // tag = 3 (title)
+        WriteU16LE(sysData, 6, (ushort)titleBytes.Length);             // length
+        Array.Copy(titleBytes, 0, sysData, 8, titleBytes.Length);
+
+        // ── Directory entries (two files: #SYSTEM and /index.html) ────────────
+        // Each PMGL entry: VarInt(nameLen) + name + VarInt(section) + VarInt(offset) + VarInt(length)
+        // Both files go in section 0.
+        // After the section-0 area header (ITSF section table), section-0 starts at a fixed offset.
+        // For simplicity we'll compute everything and lay it out linearly.
+        const long htmlOffset   = 0;           // offset within section 0
+        long       htmlLen      = htmlBytes.Length;
+        long       sysOffset    = htmlLen;     // immediately after HTML
+        long       sysLen       = sysData.Length;
+
+        byte[] entry1 = BuildPmglEntry("#SYSTEM", 0, sysOffset, sysLen);
+        byte[] entry2 = BuildPmglEntry(htmlFilePath, 0, htmlOffset, htmlLen);
+        int entriesLen = entry1.Length + entry2.Length;
+
+        // ── ITSP PMGL block ────────────────────────────────────────────────────
+        const int blockSize   = 0x1000; // 4 KB
+        const int pmglHdrSize = 20;
+        // Quick-ref section: 2 bytes (entry count) at the very end; so quickRefSize = 2.
+        const int quickRefSize = 2;
+        int  dataAreaSize = blockSize - pmglHdrSize - quickRefSize - 2;
+
+        var pmglBlock = new byte[blockSize];
+        // PMGL signature
+        pmglBlock[0] = (byte)'P'; pmglBlock[1] = (byte)'M'; pmglBlock[2] = (byte)'G'; pmglBlock[3] = (byte)'L';
+        WriteU32LE(pmglBlock, 4,  (uint)quickRefSize);     // quick-ref section size
+        WriteU32LE(pmglBlock, 8,  0);                      // reserved
+        WriteI32LE(pmglBlock, 12, -1);                     // prev block = none
+        WriteI32LE(pmglBlock, 16, -1);                     // next block = none
+        // Entries starting at offset 20
+        Array.Copy(entry1, 0, pmglBlock, 20,              entry1.Length);
+        Array.Copy(entry2, 0, pmglBlock, 20 + entry1.Length, entry2.Length);
+        // quick-ref tail: 2-byte count
+        pmglBlock[blockSize - 2] = 2; pmglBlock[blockSize - 1] = 0;
+
+        // ── ITSP header (84 bytes) ─────────────────────────────────────────────
+        // Layout per CHM spec (offsets relative to start of ITSP):
+        //   +0  : 'ITSP' magic
+        //   +4  : version = 1
+        //   +8  : header size = 84
+        //   +12 : unknown = 0
+        //   +16 : directory chunk size
+        //   +20 : quick-ref density (typically 2)
+        //   +24 : tree depth (1 = flat; no PMGI index blocks)
+        //   +28 : root PMGI chunk index (-1 when depth == 1)
+        //   +32 : first PMGL leaf chunk index
+        //   +36 : last  PMGL leaf chunk index
+        //   +40 : unknown = -1
+        //   +44 : total directory chunk count
+        //   +48 : Windows language ID
+        const int itspHdrSize = 84;
+        var itspHdr = new byte[itspHdrSize];
+        itspHdr[0] = (byte)'I'; itspHdr[1] = (byte)'T'; itspHdr[2] = (byte)'S'; itspHdr[3] = (byte)'P';
+        WriteU32LE(itspHdr,  4, 1);               // version
+        WriteU32LE(itspHdr,  8, itspHdrSize);      // header size
+        WriteU32LE(itspHdr, 12, 0);                // unknown
+        WriteU32LE(itspHdr, 16, (uint)blockSize);  // chunk size
+        WriteU32LE(itspHdr, 20, 2);                // quick-ref density
+        WriteU32LE(itspHdr, 24, 1);                // tree depth = 1 (flat, no PMGI)
+        WriteI32LE(itspHdr, 28, -1);               // root PMGI chunk (-1 = none for depth 1)
+        WriteI32LE(itspHdr, 32, 0);                // first PMGL leaf chunk = 0
+        WriteI32LE(itspHdr, 36, 0);                // last  PMGL leaf chunk = 0
+        WriteI32LE(itspHdr, 40, -1);               // unknown = -1
+        WriteU32LE(itspHdr, 44, 1);                // total chunk count = 1
+        WriteU32LE(itspHdr, 48, 0x0409);           // language: en-US
+        // bytes 52..83 are zero
+
+        // ── ITSF header (v3 = 96 bytes) ──────────────────────────────────────
+        // Layout:
+        //   [0..95]   ITSF header (96 bytes for v3)
+        //   [96..95+itspHdrSize+blockSize-1]  Directory (ITSP + PMGL blocks)
+        //   [above]   Section 0 content (HTML, then #SYSTEM)
+        const int itsfHdrSize  = 96;
+        long directoryOffset   = itsfHdrSize;
+        long directorySize     = itspHdrSize + blockSize;
+        long section0Offset    = directoryOffset + directorySize;  // section 0 immediately follows directory
+        long section0Size      = htmlLen + sysLen;
+
+        var itsf = new byte[itsfHdrSize];
+        itsf[0] = (byte)'I'; itsf[1] = (byte)'T'; itsf[2] = (byte)'S'; itsf[3] = (byte)'F';
+        WriteU32LE(itsf,  4, 3);                                 // version 3
+        WriteU32LE(itsf,  8, itsfHdrSize);                       // header size
+        WriteU32LE(itsf, 12, 0);                                 // unknown
+        WriteU32LE(itsf, 16, 0);                                 // timestamp
+        WriteU32LE(itsf, 20, 0x0409);                            // language (en-US)
+        // GUIDs at 24..55 (all zeros for tests)
+        // Unnamed pre-directory section at 56..71 (all zeros for tests)
+        WriteI64LE(itsf, 72, directoryOffset);                   // ITSP directory offset
+        WriteI64LE(itsf, 80, directorySize);                     // ITSP directory length
+        WriteI64LE(itsf, 88, section0Offset);                    // content offset (v3): section-0 starts here
+
+        // ── Assemble ──────────────────────────────────────────────────────────
+        long total = itsfHdrSize + itspHdrSize + blockSize + htmlLen + sysLen;
+        var ms = new MemoryStream((int)total);
+        ms.Write(itsf);
+        ms.Write(itspHdr);
+        ms.Write(pmglBlock);
+        ms.Write(htmlBytes);
+        ms.Write(sysData);
+        ms.Position = 0;
+        return ms;
+    }
+
+    // ── CHM binary helpers ───────────────────────────────────────────────────
+
+    private static byte[] BuildPmglEntry(string name, int section, long offset, long length)
+    {
+        var nameBytes = Encoding.UTF8.GetBytes(name);
+        var buf = new List<byte>();
+        WriteVarInt(buf, nameBytes.Length);
+        buf.AddRange(nameBytes);
+        WriteVarInt(buf, section);
+        WriteVarLong(buf, offset);
+        WriteVarLong(buf, length);
+        return [.. buf];
+    }
+
+    private static void WriteVarInt(List<byte> buf, long value)
+    {
+        // Encode as variable-length 7-bit integer (big-endian, MSB continuation).
+        if (value < 0) value = 0;
+        var bytes = new List<byte>();
+        do
+        {
+            bytes.Add((byte)(value & 0x7F));
+            value >>= 7;
+        }
+        while (value > 0);
+        bytes.Reverse();
+        for (int i = 0; i < bytes.Count - 1; i++) bytes[i] |= 0x80;
+        buf.AddRange(bytes);
+    }
+
+    private static void WriteVarLong(List<byte> buf, long value) => WriteVarInt(buf, value);
+
+    private static void WriteU32LE(byte[] buf, int offset, uint value)
+    {
+        buf[offset]     = (byte)(value & 0xFF);
+        buf[offset + 1] = (byte)((value >> 8)  & 0xFF);
+        buf[offset + 2] = (byte)((value >> 16) & 0xFF);
+        buf[offset + 3] = (byte)((value >> 24) & 0xFF);
+    }
+
+    private static void WriteU16LE(byte[] buf, int offset, ushort value)
+    {
+        buf[offset]     = (byte)(value & 0xFF);
+        buf[offset + 1] = (byte)((value >> 8) & 0xFF);
+    }
+
+    private static void WriteI32LE(byte[] buf, int offset, int value) =>
+        WriteU32LE(buf, offset, (uint)value);
+
+    private static void WriteI64LE(byte[] buf, int offset, long value)
+    {
+        WriteU32LE(buf, offset,     (uint)(value & 0xFFFFFFFF));
+        WriteU32LE(buf, offset + 4, (uint)((value >> 32) & 0xFFFFFFFF));
+    }
 }

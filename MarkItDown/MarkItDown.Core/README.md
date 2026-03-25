@@ -1,6 +1,6 @@
 # MarkItDown.Core
 
-The portable conversion library at the heart of the solution. It exposes `MarkItDownService`, 14 built-in document converters, and all the models needed to add custom converters.
+The portable conversion library at the heart of the solution. It exposes `MarkItDownService`, 15 built-in document converters, and all the models needed to add custom converters.
 
 **Target:** `net10.0` · **Nullable:** enabled · **Trimming / AOT:** `IsTrimmable=true`, `IsAotCompatible=true`
 
@@ -175,6 +175,7 @@ Both derive from `FileConversionException`. `UnsupportedFormatException` is seal
 | `ImageConverter` | Common image extensions + `image/*` MIME | Full EXIF / metadata dump as Markdown lists |
 | `EpubConverter` | `.epub`, `application/epub+zip` | Reading-order chapters → HTML → Markdown |
 | `MobiConverter` | `.mobi`, `.azw`, `application/x-mobipocket-ebook`, `application/x-mobi8-ebook` | PalmDB container + PalmDoc decompression → HTML → Markdown; title from MOBI FullName or PalmDB name |
+| `ChmConverter` | `.chm`, `application/vnd.ms-htmlhelp`, ITSF magic | ITSF binary container + LZX decompression → HTML → Markdown; title from `#SYSTEM`; TOC order from HHC |
 
 ### Priority 10 (generic — fallback chain)
 
@@ -197,6 +198,8 @@ Both derive from `FileConversionException`. `UnsupportedFormatException` is seal
 | `MarkdownHelpers` | `BuildTable(rows)` with pipe-escaping, `EscapeInline` |
 | `HtmlMarkdownConverter` | Shared HTML → `DocumentConverterResult` pipeline used by HTML, Wikipedia, EPUB, and MOBI converters |
 | `PalmDocDecoder` | PalmDoc LZ77 decompressor used by `MobiConverter`; supports compression types 1 (none) and 2 (LZ77) |
+| `ChmParser` | ITSF/ITSP binary parser used by `ChmConverter`; walks PMGL B-tree, reads `#SYSTEM` title, exposes section-0 (uncompressed) and section-1 (LZX) files |
+| `LzxDecoder` | CHM-variant LZX sliding-window decompressor used by `ChmParser`; pure algorithmic, AOT-safe |
 
 ---
 
