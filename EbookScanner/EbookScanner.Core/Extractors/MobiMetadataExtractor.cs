@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using EbookScanner.Core.Models;
 
@@ -10,6 +11,9 @@ namespace EbookScanner.Core.Extractors;
 public sealed class MobiMetadataExtractor : BookMetadataExtractor
 {
     private static readonly string[] MobiExtensions = [".mobi", ".azw", ".azw3", ".prc"];
+    private const int MaxRecordZeroLength = 65_536;
+    private static ReadOnlySpan<byte> MobiMagic => "MOBI"u8;
+    private static ReadOnlySpan<byte> ExthMagic => "EXTH"u8;
 
     public override bool Accepts(string filePath) =>
         MobiExtensions.Contains(Path.GetExtension(filePath), StringComparer.OrdinalIgnoreCase);
@@ -87,50 +91,36 @@ public sealed class MobiMetadataExtractor : BookMetadataExtractor
             ? (uint)(stream.Length - record0Offset)
             : record1Offset - record0Offset;
 
-        if (record0Offset >= (ulong)stream.Length)
+        if (record0Offset >= (ulong)stream.Length || record0Length == 0)
             return new MobiRawMetadata { Title = string.IsNullOrWhiteSpace(palmName) ? null : palmName };
 
         stream.Seek(record0Offset, SeekOrigin.Begin);
-        var record0 = reader.ReadBytes((int)Math.Min(record0Length, 65536));
+        var record0 = reader.ReadBytes((int)Math.Min(record0Length, MaxRecordZeroLength));
 
-        // ── PalmDOC Header (32 bytes at start of record 0) ────────────────────
-        // ── MOBI Header starts at offset 32 of record 0 ──────────────────────
-        if (record0.Length < 36)
-            return new MobiRawMetadata { Title = string.IsNullOrWhiteSpace(palmName) ? null : palmName };
-
-        var magic = Encoding.ASCII.GetString(record0, 32, 4);
-        if (magic != "MOBI")
-            return new MobiRawMetadata { Title = string.IsNullOrWhiteSpace(palmName) ? null : palmName };
-
-        // MOBI header length at offset 36 (4 bytes, big-endian)
-        uint mobiHeaderLength = BigEndianUInt32(record0, 36);
-        // Full title offset (from start of record 0) at offset 84 (4 bytes)
-        // Full title length at offset 88 (4 bytes)
-        string? fullTitle = null;
-        if (record0.Length >= 92)
+        // Real-world files place the MOBI header at different positions within record 0.
+        if (!TryFindMobiHeaderOffset(record0, out int mobiHeaderOffset) ||
+            mobiHeaderOffset + 8 > record0.Length)
         {
-            uint fullTitleOffset = BigEndianUInt32(record0, 84);
-            uint fullTitleLength = BigEndianUInt32(record0, 88);
-            if (fullTitleOffset + fullTitleLength <= record0.Length)
-                fullTitle = Encoding.UTF8.GetString(record0, (int)fullTitleOffset, (int)fullTitleLength).Trim();
+            return new MobiRawMetadata { Title = string.IsNullOrWhiteSpace(palmName) ? null : palmName };
         }
 
+        uint mobiHeaderLength = BigEndianUInt32(record0, mobiHeaderOffset + 4);
+        string? fullTitle = TryReadFullTitle(record0, mobiHeaderOffset);
+
         // ── EXTH Header (immediately after MOBI header) ───────────────────────
-        uint exthOffset = 32 + mobiHeaderLength; // relative to start of record 0
+        uint exthOffset = (uint)mobiHeaderOffset + mobiHeaderLength;
         if (exthOffset + 12 > record0.Length)
         {
             var title = NullIfEmpty(fullTitle) ?? (string.IsNullOrWhiteSpace(palmName) ? null : palmName);
             return new MobiRawMetadata { Title = title };
         }
 
-        var exthMagic = Encoding.ASCII.GetString(record0, (int)exthOffset, 4);
-        if (exthMagic != "EXTH")
+        if (!record0.AsSpan((int)exthOffset, 4).SequenceEqual(ExthMagic))
         {
             var title = NullIfEmpty(fullTitle) ?? (string.IsNullOrWhiteSpace(palmName) ? null : palmName);
             return new MobiRawMetadata { Title = title };
         }
 
-        uint exthHeaderLength = BigEndianUInt32(record0, (int)exthOffset + 4);
         uint exthRecordCount = BigEndianUInt32(record0, (int)exthOffset + 8);
 
         var meta = new MobiRawMetadata();
@@ -147,7 +137,7 @@ public sealed class MobiMetadataExtractor : BookMetadataExtractor
             if (recordLength < 8 || pos + recordLength > record0.Length) break;
 
             var valueBytes = record0.AsSpan((int)(pos + 8), (int)(recordLength - 8));
-            var valueStr = Encoding.UTF8.GetString(valueBytes).Trim('\0').Trim();
+            var valueStr = DecodeMetadataString(valueBytes);
 
             switch (recordType)
             {
@@ -167,7 +157,7 @@ public sealed class MobiMetadataExtractor : BookMetadataExtractor
                     if (!string.IsNullOrWhiteSpace(valueStr)) tags.Add(valueStr);
                     break;
                 case 106: // Publishing date
-                    if (meta.PublishedDate is null && DateTimeOffset.TryParse(valueStr, out var dt))
+                    if (meta.PublishedDate is null && TryParsePublishedDate(valueStr, out var dt))
                         meta.PublishedDate = dt;
                     break;
                 case 503: // Updated title (preferred over PalmDB name)
@@ -189,6 +179,72 @@ public sealed class MobiMetadataExtractor : BookMetadataExtractor
 
     private static string? NullIfEmpty(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value;
+
+    private static bool TryFindMobiHeaderOffset(byte[] record0, out int mobiHeaderOffset)
+    {
+        mobiHeaderOffset = -1;
+        int maxOffset = Math.Min(record0.Length - MobiMagic.Length, 64);
+        for (int i = 0; i <= maxOffset; i++)
+        {
+            if (record0.AsSpan(i, MobiMagic.Length).SequenceEqual(MobiMagic))
+            {
+                mobiHeaderOffset = i;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string? TryReadFullTitle(byte[] record0, int mobiHeaderOffset)
+    {
+        foreach (var candidate in GetFullTitleFieldOffsets(mobiHeaderOffset))
+        {
+            if (candidate.OffsetField + 8 > record0.Length)
+                continue;
+
+            uint fullTitleOffset = BigEndianUInt32(record0, candidate.OffsetField);
+            uint fullTitleLength = BigEndianUInt32(record0, candidate.OffsetField + 4);
+            if (fullTitleOffset == 0 || fullTitleLength == 0)
+                continue;
+
+            if (fullTitleOffset + fullTitleLength > record0.Length)
+                continue;
+
+            var title = DecodeMetadataString(record0.AsSpan((int)fullTitleOffset, (int)fullTitleLength));
+            if (!string.IsNullOrWhiteSpace(title))
+                return title;
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<(int OffsetField, int LengthField)> GetFullTitleFieldOffsets(int mobiHeaderOffset)
+    {
+        yield return (84, 88);
+
+        int relativeToRecord32Header = mobiHeaderOffset + 84;
+        if (relativeToRecord32Header != 84)
+            yield return (relativeToRecord32Header, relativeToRecord32Header + 4);
+    }
+
+    private static string DecodeMetadataString(ReadOnlySpan<byte> bytes)
+    {
+        string utf8 = Encoding.UTF8.GetString(bytes).Trim('\0').Trim();
+        if (!utf8.Contains('\uFFFD'))
+            return utf8;
+
+        return Encoding.Latin1.GetString(bytes).Trim('\0').Trim();
+    }
+
+    private static bool TryParsePublishedDate(string value, out DateTimeOffset date)
+    {
+        return DateTimeOffset.TryParse(
+            value,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal,
+            out date);
+    }
 
     private static uint BigEndianUInt32(byte[] buffer, int offset) =>
         ((uint)buffer[offset] << 24) |

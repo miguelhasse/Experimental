@@ -219,6 +219,104 @@ public sealed class ChmMetadataExtractorTests
     }
 
     [Fact]
+    public async Task ExtractAsync_CompressedHtmlAndHhk_ExtractsEnhancedMetadata()
+    {
+        const string hhk = """
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<HTML><BODY>
+<UL>
+  <LI><OBJECT type="text/sitemap">
+      <param name="Name" value="Compression">
+      <param name="Local" value="index.html">
+  </OBJECT>
+</UL>
+</BODY></HTML>
+""";
+
+        const string html = """
+<!doctype html>
+<html>
+<head>
+  <title>Compressed Title</title>
+  <meta name="author" content="Ada Lovelace; Grace Hopper" />
+  <meta name="publisher" content="Tech Books Press" />
+  <meta name="description" content="A practical guide to compressed CHM metadata." />
+  <meta name="keywords" content="compression, chm, metadata" />
+  <meta name="dc.date" content="2021-06-15" />
+</head>
+<body>
+  <p>ISBN: 978-1-4028-9462-6</p>
+</body>
+</html>
+""";
+
+        var filePath = CreateChmFile(new ChmFixtureOptions(
+            Title: "Container Title",
+            DefaultTopic: "/index.html",
+            IndexFile: "/book.hhk",
+            AdditionalFiles:
+            [
+                new ChmFixtureFile("/book.hhk", Encoding.UTF8.GetBytes(hhk), ContentSection: 1),
+                new ChmFixtureFile("/index.html", Encoding.UTF8.GetBytes(html), ContentSection: 1)
+            ]));
+
+        var extractor = new ChmMetadataExtractor(new StubCompressedObjectReaderFactory(
+            new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["/book.hhk"] = Encoding.UTF8.GetBytes(hhk),
+                ["/index.html"] = Encoding.UTF8.GetBytes(html),
+            }));
+
+        try
+        {
+            var metadata = await extractor.ExtractAsync(filePath, TestContext.Current.CancellationToken);
+
+            Assert.Equal("Container Title", metadata.Title);
+            Assert.NotNull(metadata.Authors);
+            Assert.Equal(["Ada Lovelace", "Grace Hopper"], metadata.Authors);
+            Assert.Equal("Tech Books Press", metadata.Publisher);
+            Assert.Equal("A practical guide to compressed CHM metadata.", metadata.Description);
+            Assert.Equal("9781402894626", metadata.Isbn);
+            Assert.Equal(new DateTimeOffset(2021, 06, 15, 0, 0, 0, TimeSpan.Zero), metadata.PublishedDate);
+            Assert.NotNull(metadata.Tags);
+            Assert.Equal(["Compression", "chm", "metadata"], metadata.Tags);
+        }
+        finally
+        {
+            File.Delete(filePath);
+        }
+    }
+
+    [Fact]
+    public async Task ExtractAsync_CompressedObjectsWithoutReader_FallsBackGracefully()
+    {
+        const string html = """
+<!doctype html>
+<html><head><title>Compressed Title</title><meta name="author" content="Ada Lovelace" /></head></html>
+""";
+
+        var filePath = CreateChmFile(new ChmFixtureOptions(
+            Title: "Container Title",
+            DefaultTopic: "/index.html",
+            AdditionalFiles:
+            [
+                new ChmFixtureFile("/index.html", Encoding.UTF8.GetBytes(html), ContentSection: 1)
+            ]));
+
+        try
+        {
+            var metadata = await _extractor.ExtractAsync(filePath, TestContext.Current.CancellationToken);
+
+            Assert.Equal("Container Title", metadata.Title);
+            Assert.Null(metadata.Authors);
+        }
+        finally
+        {
+            File.Delete(filePath);
+        }
+    }
+
+    [Fact]
     public async Task ExtractAsync_TruncatedFile_FallsBackGracefully()
     {
         var filePath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".chm");
@@ -295,6 +393,9 @@ public sealed class ChmMetadataExtractorTests
     {
         foreach (var file in files)
         {
+            if (file.ContentSection != 0)
+                continue;
+
             stream.Write(file.Data);
         }
     }
@@ -396,15 +497,16 @@ public sealed class ChmMetadataExtractorTests
     private static void WritePmglChunk(Stream stream, uint blockLength, IReadOnlyList<ChmFixtureFile> files)
     {
         using var entriesStream = new MemoryStream();
-        long currentOffset = 0;
+        var sectionOffsets = new Dictionary<int, long>();
         foreach (var file in files)
         {
+            sectionOffsets.TryGetValue(file.ContentSection, out var currentOffset);
             WriteEncInt(entriesStream, file.Path.Length);
             entriesStream.Write(Encoding.UTF8.GetBytes(file.Path));
-            WriteEncInt(entriesStream, 0);
+            WriteEncInt(entriesStream, file.ContentSection);
             WriteEncInt(entriesStream, currentOffset);
             WriteEncInt(entriesStream, file.Data.Length);
-            currentOffset += file.Data.Length;
+            sectionOffsets[file.ContentSection] = currentOffset + file.Data.Length;
         }
 
         int entrySize = (int)entriesStream.Length;
@@ -540,5 +642,26 @@ public sealed class ChmMetadataExtractorTests
         string? IndexFile = null,
         IReadOnlyList<ChmFixtureFile>? AdditionalFiles = null);
 
-    private sealed record ChmFixtureFile(string Path, byte[] Data);
+    private sealed record ChmFixtureFile(string Path, byte[] Data, int ContentSection = 0);
+
+    private sealed class StubCompressedObjectReaderFactory(
+        IReadOnlyDictionary<string, byte[]> objects) : IChmCompressedObjectReaderFactory
+    {
+        public IChmCompressedObjectReader Create(
+            string filePath,
+            ulong dataOffset,
+            IReadOnlyDictionary<string, ChmObjectLocation> entries) =>
+            new StubCompressedObjectReader(objects);
+    }
+
+    private sealed class StubCompressedObjectReader(
+        IReadOnlyDictionary<string, byte[]> objects) : IChmCompressedObjectReader
+    {
+        public void Dispose()
+        {
+        }
+
+        public bool TryRead(ChmObjectLocation entry, out byte[] data) =>
+            objects.TryGetValue(entry.Path, out data!);
+    }
 }

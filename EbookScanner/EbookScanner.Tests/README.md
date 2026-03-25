@@ -24,8 +24,8 @@ EbookScanner.Tests/
 │   ├── MarkdownTableFormatterTests.cs — table output, column selection, escaping (10 tests)
 │   └── JsonFormatterTests.cs          — JSON structure, camelCase, null omission (5 tests)
 ├── Extractors/
-│   ├── MobiMetadataExtractorTests.cs  — extension acceptance, binary parsing (13 tests)
-│   └── ChmMetadataExtractorTests.cs   — extension acceptance, ITSF binary parsing (13 tests)
+│   ├── MobiMetadataExtractorTests.cs  — extension acceptance, binary parsing (15 tests)
+│   └── ChmMetadataExtractorTests.cs   — extension acceptance, ITSF binary parsing (15 tests)
 └── EbookScannerServiceTests.cs        — directory scanning, recursion, format filtering (13 tests)
 ```
 
@@ -75,6 +75,8 @@ EbookScanner.Tests/
 | `Accepts_InvalidExtensions_*` | `.pdf`, `.epub`, `.txt` rejected |
 | `ExtractAsync_ValidMobiFile_ExtractsTitle` | Reads EXTH record 503 (Updated Title) |
 | `ExtractAsync_ValidMobiFile_ExtractsAuthor` | Reads EXTH record 100 (Author) |
+| `ExtractAsync_RealWorldHeaderOffset_ExtractsRichMetadata` | Real-world record-0 layout with dynamic `MOBI` header detection extracts title/authors/publisher/ISBN/date/language/tags |
+| `ExtractAsync_LegacySyntheticHeaderOffset_StillExtractsMetadata` | Older synthetic offset-32 fixture remains supported |
 | `ExtractAsync_ValidMobiFile_HasCorrectFormat` | Format string is `"MOBI"` |
 | `ExtractAsync_ValidMobiFile_HasCorrectFileName` | FileName matches the input file |
 | `ExtractAsync_TruncatedFile_FallsBackGracefully` | Short/corrupt file doesn't throw |
@@ -93,6 +95,8 @@ EbookScanner.Tests/
 | `ExtractAsync_ValidChmFileWithSystemTimestamp_ExtractsModifiedDate` | `#SYSTEM` compile time populates `ModifiedDate` |
 | `ExtractAsync_ValidChmFileWithWindowsStrings_UsesIndexFileForTags` | `#WINDOWS` / `#STRINGS` discover HHK tags |
 | `ExtractAsync_ValidChmFileWithHtmlMetadata_ExtractsEnhancedMetadata` | HTML heuristics populate title/authors/publisher/ISBN/date/tags |
+| `ExtractAsync_CompressedHtmlAndHhk_ExtractsEnhancedMetadata` | Injected compressed-object reader exercises HHK + HTML metadata over section-1 entries |
+| `ExtractAsync_CompressedObjectsWithoutReader_FallsBackGracefully` | Missing compressed backend does not throw or clobber container metadata |
 | `ExtractAsync_TruncatedFile_FallsBackGracefully` | Short file doesn't throw |
 | `ExtractAsync_InvalidMagic_ReturnsNullTitle` | Non-CHM file returns null title |
 

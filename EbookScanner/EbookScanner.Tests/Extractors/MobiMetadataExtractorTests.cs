@@ -63,6 +63,63 @@ public sealed class MobiMetadataExtractorTests
     }
 
     [Fact]
+    public async Task ExtractAsync_RealWorldHeaderOffset_ExtractsRichMetadata()
+    {
+        var filePath = CreateMinimalMobiFile(
+            "Azure Data Factory by Example",
+            "Richard Swinbank",
+            palmDocHeaderLength: 16,
+            publisher: "Apress",
+            description: "A practical guide to data pipelines.",
+            isbn: "9781484299999",
+            publishedDate: "2024-03-24",
+            language: "en",
+            tags:
+            [
+                "Data Engineering",
+                "Azure"
+            ]);
+
+        try
+        {
+            var metadata = await _extractor.ExtractAsync(filePath, TestContext.Current.CancellationToken);
+
+            Assert.Equal("Azure Data Factory by Example", metadata.Title);
+            Assert.NotNull(metadata.Authors);
+            Assert.Equal(["Richard Swinbank"], metadata.Authors);
+            Assert.Equal("Apress", metadata.Publisher);
+            Assert.Equal("A practical guide to data pipelines.", metadata.Description);
+            Assert.Equal("9781484299999", metadata.Isbn);
+            Assert.Equal(new DateTimeOffset(2024, 03, 24, 0, 0, 0, TimeSpan.Zero), metadata.PublishedDate);
+            Assert.Equal("en", metadata.Language);
+            Assert.NotNull(metadata.Tags);
+            Assert.Equal(["Data Engineering", "Azure"], metadata.Tags);
+        }
+        finally
+        {
+            File.Delete(filePath);
+        }
+    }
+
+    [Fact]
+    public async Task ExtractAsync_LegacySyntheticHeaderOffset_StillExtractsMetadata()
+    {
+        var filePath = CreateMinimalMobiFile("Legacy Layout Title", "Legacy Author", palmDocHeaderLength: 32);
+        try
+        {
+            var metadata = await _extractor.ExtractAsync(filePath, TestContext.Current.CancellationToken);
+
+            Assert.Equal("Legacy Layout Title", metadata.Title);
+            Assert.NotNull(metadata.Authors);
+            Assert.Equal(["Legacy Author"], metadata.Authors);
+        }
+        finally
+        {
+            File.Delete(filePath);
+        }
+    }
+
+    [Fact]
     public async Task ExtractAsync_ValidMobiFile_HasCorrectFormat()
     {
         var filePath = CreateMinimalMobiFile("Title", "Author");
@@ -117,7 +174,16 @@ public sealed class MobiMetadataExtractorTests
     /// Builds a minimal but structurally valid MOBI file in memory with an EXTH block
     /// containing the given title (record 503) and author (record 100).
     /// </summary>
-    private static string CreateMinimalMobiFile(string title, string author)
+    private static string CreateMinimalMobiFile(
+        string title,
+        string author,
+        int palmDocHeaderLength = 16,
+        string? publisher = null,
+        string? description = null,
+        string? isbn = null,
+        string? publishedDate = null,
+        string? language = null,
+        IReadOnlyList<string>? tags = null)
     {
         var path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".mobi");
         using var ms = new MemoryStream();
@@ -142,28 +208,32 @@ public sealed class MobiMetadataExtractorTests
         WriteUInt32BE(ms, 0); // attributes + unique id
 
         // ── Record 0 ─────────────────────────────────────────────────────────
-        // PalmDOC header (32 bytes of zeros)
-        ms.Write(new byte[32]);
+        // PalmDOC header bytes before the MOBI header. Real files commonly use 16 bytes.
+        ms.Write(new byte[palmDocHeaderLength]);
 
-        // MOBI header starts here (offset 32 within record 0)
+        // MOBI header starts after the PalmDOC header.
         // Magic "MOBI"
         ms.Write("MOBI"u8);
-        // MOBI header length (offset 36 within record 0, 4 bytes)
+        // MOBI header length (4 bytes immediately after the magic)
         uint mobiHeaderLength = 248; // standard MOBI header length
         WriteUInt32BE(ms, mobiHeaderLength);
-        // Fill the rest of the MOBI header with zeros up to offset 84 (full title offset)
-        ms.Write(new byte[84 - 8]); // 76 zero bytes (we wrote 4+4=8 so far)
+        // Fill the rest of the MOBI header with zeros up to offset 84 relative to the record start.
+        int bytesWrittenInRecord = palmDocHeaderLength + 8;
+        if (bytesWrittenInRecord > 84)
+            throw new InvalidOperationException("PalmDOC header is too large for the synthetic fixture.");
 
-        // Full title offset (offset 84): place it after MOBI header end = 32 + mobiHeaderLength
-        uint fullTitleOffset = 32 + mobiHeaderLength + (uint)ExthBlockSize(title, author);
-        WriteUInt32BE(ms, fullTitleOffset); // offset 84
-        WriteUInt32BE(ms, (uint)System.Text.Encoding.UTF8.GetByteCount(title)); // offset 88
-        // Fill remaining MOBI header bytes to reach mobiHeaderLength
-        int mobiWritten = 4 + 4 + (84 - 8) + 4 + 4; // bytes written so far in MOBI header
-        ms.Write(new byte[mobiHeaderLength - mobiWritten]);
+        ms.Write(new byte[84 - bytesWrittenInRecord]);
+
+        // Full title offset/length at record offsets 84/88 for real-world layout compatibility.
+        uint fullTitleOffset = (uint)(palmDocHeaderLength + mobiHeaderLength + ExthBlockSize(title, author, publisher, description, isbn, publishedDate, language, tags));
+        WriteUInt32BE(ms, fullTitleOffset);
+        WriteUInt32BE(ms, (uint)System.Text.Encoding.UTF8.GetByteCount(title));
+
+        int bytesWrittenInMobiHeader = (int)ms.Position - (int)record0Offset - palmDocHeaderLength;
+        ms.Write(new byte[mobiHeaderLength - bytesWrittenInMobiHeader]);
 
         // EXTH header immediately after MOBI header
-        WriteExthBlock(ms, title, author);
+        WriteExthBlock(ms, title, author, publisher, description, isbn, publishedDate, language, tags);
 
         // Full title (at the offset we calculated)
         ms.Write(System.Text.Encoding.UTF8.GetBytes(title));
@@ -173,36 +243,87 @@ public sealed class MobiMetadataExtractorTests
         return path;
     }
 
-    private static int ExthBlockSize(string title, string author)
+    private static int ExthBlockSize(
+        string title,
+        string author,
+        string? publisher,
+        string? description,
+        string? isbn,
+        string? publishedDate,
+        string? language,
+        IReadOnlyList<string>? tags)
     {
         var titleBytes = System.Text.Encoding.UTF8.GetByteCount(title);
         var authorBytes = System.Text.Encoding.UTF8.GetByteCount(author);
-        // EXTH header (12) + record 503 (8 + titleBytes) + record 100 (8 + authorBytes)
-        return 12 + (8 + titleBytes) + (8 + authorBytes);
+        int size = 12 + (8 + titleBytes) + (8 + authorBytes);
+        size += ExthRecordSize(publisher);
+        size += ExthRecordSize(description);
+        size += ExthRecordSize(isbn);
+        size += ExthRecordSize(publishedDate);
+        size += ExthRecordSize(language);
+        if (tags is not null)
+        {
+            foreach (var tag in tags)
+                size += ExthRecordSize(tag);
+        }
+
+        return size;
     }
 
-    private static void WriteExthBlock(Stream stream, string title, string author)
+    private static int ExthRecordSize(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? 0 : 8 + System.Text.Encoding.UTF8.GetByteCount(value);
+
+    private static void WriteExthBlock(
+        Stream stream,
+        string title,
+        string author,
+        string? publisher,
+        string? description,
+        string? isbn,
+        string? publishedDate,
+        string? language,
+        IReadOnlyList<string>? tags)
     {
         var titleBytes = System.Text.Encoding.UTF8.GetBytes(title);
         var authorBytes = System.Text.Encoding.UTF8.GetBytes(author);
+        var records = new List<(uint Type, byte[] Data)>
+        {
+            (503, titleBytes),
+            (100, authorBytes)
+        };
+
+        AddOptionalRecord(records, 101, publisher);
+        AddOptionalRecord(records, 103, description);
+        AddOptionalRecord(records, 104, isbn);
+        AddOptionalRecord(records, 106, publishedDate);
+        AddOptionalRecord(records, 524, language);
+        if (tags is not null)
+        {
+            foreach (var tag in tags)
+                AddOptionalRecord(records, 105, tag);
+        }
 
         // EXTH magic
         stream.Write("EXTH"u8);
         // EXTH header length (12 + records)
-        uint exthLen = (uint)ExthBlockSize(title, author);
+        uint exthLen = (uint)(12 + records.Sum(record => 8 + record.Data.Length));
         WriteUInt32BE(stream, exthLen);
-        // Record count = 2
-        WriteUInt32BE(stream, 2);
+        WriteUInt32BE(stream, (uint)records.Count);
 
-        // Record 503 (Updated Title)
-        WriteUInt32BE(stream, 503);
-        WriteUInt32BE(stream, (uint)(8 + titleBytes.Length));
-        stream.Write(titleBytes);
+        foreach (var record in records)
+        {
+            WriteUInt32BE(stream, record.Type);
+            WriteUInt32BE(stream, (uint)(8 + record.Data.Length));
+            stream.Write(record.Data);
+        }
+    }
 
-        // Record 100 (Author)
-        WriteUInt32BE(stream, 100);
-        WriteUInt32BE(stream, (uint)(8 + authorBytes.Length));
-        stream.Write(authorBytes);
+    private static void AddOptionalRecord(List<(uint Type, byte[] Data)> records, uint type, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return;
+
+        records.Add((type, System.Text.Encoding.UTF8.GetBytes(value)));
     }
 
     private static void WriteUInt32BE(Stream stream, uint value)

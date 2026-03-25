@@ -17,6 +17,18 @@ public sealed partial class ChmMetadataExtractor : BookMetadataExtractor
     private const int MaxHtmlCandidateLength = 262_144;
     private const int MaxHtmlCandidates = 12;
 
+    private readonly IChmCompressedObjectReaderFactory _compressedObjectReaderFactory;
+
+    public ChmMetadataExtractor()
+        : this(new ChmSharpCompressedObjectReaderFactory())
+    {
+    }
+
+    internal ChmMetadataExtractor(IChmCompressedObjectReaderFactory compressedObjectReaderFactory)
+    {
+        _compressedObjectReaderFactory = compressedObjectReaderFactory;
+    }
+
     public override bool Accepts(string filePath) =>
         Path.GetExtension(filePath).Equals(".chm", StringComparison.OrdinalIgnoreCase);
 
@@ -44,7 +56,7 @@ public sealed partial class ChmMetadataExtractor : BookMetadataExtractor
             Tags: meta.Tags));
     }
 
-    private static ChmRawMetadata ParseChmMetadata(string filePath)
+    private ChmRawMetadata ParseChmMetadata(string filePath)
     {
         try
         {
@@ -56,34 +68,35 @@ public sealed partial class ChmMetadataExtractor : BookMetadataExtractor
         }
     }
 
-    private static ChmRawMetadata ParseChmMetadataCore(string filePath)
+    private ChmRawMetadata ParseChmMetadataCore(string filePath)
     {
         using var stream = File.OpenRead(filePath);
         if (!TryReadArchive(stream, out var archive))
             return new ChmRawMetadata();
 
+        using var compressedReader = _compressedObjectReaderFactory.Create(filePath, archive.DataOffset, archive.Entries);
         var meta = new ChmRawMetadata();
 
-        if (TryReadObjectBytes(stream, archive, "/#SYSTEM", out var systemData))
+        if (TryReadObjectBytes(stream, archive, compressedReader, "/#SYSTEM", out var systemData))
             meta = ParseSystemFile(systemData, archive.ItsfLanguageId);
         else
             meta.Language = LcidToLanguageTag(archive.ItsfLanguageId);
 
-        if (TryReadObjectBytes(stream, archive, "/#WINDOWS", out var windowsData) &&
-            TryReadObjectBytes(stream, archive, "/#STRINGS", out var stringsData))
+        if (TryReadObjectBytes(stream, archive, compressedReader, "/#WINDOWS", out var windowsData) &&
+            TryReadObjectBytes(stream, archive, compressedReader, "/#STRINGS", out var stringsData))
         {
             MergeWindowsMetadata(meta, ParseWindowsFile(windowsData, stringsData));
         }
 
         if (!string.IsNullOrWhiteSpace(meta.IndexFile) &&
-            TryReadTextObject(stream, archive, meta.IndexFile, out var hhkText))
+            TryReadTextObject(stream, archive, compressedReader, meta.IndexFile, out var hhkText))
         {
             meta.Tags = MergeTags(meta.Tags, ExtractTagsFromHhk(hhkText));
         }
 
         foreach (var candidatePath in GetHtmlCandidatePaths(archive, meta))
         {
-            if (!TryReadTextObject(stream, archive, candidatePath, out var html))
+            if (!TryReadTextObject(stream, archive, compressedReader, candidatePath, out var html))
                 continue;
 
             MergeHtmlMetadata(meta, ParseHtmlMetadata(html));
@@ -137,7 +150,7 @@ public sealed partial class ChmMetadataExtractor : BookMetadataExtractor
 
         long chunksBase = (long)dirOffset + itspHdrLen;
         var chunkData = new byte[blockLen];
-        var entries = new Dictionary<string, ChmObjectEntry>(StringComparer.OrdinalIgnoreCase);
+        var entries = new Dictionary<string, ChmObjectLocation>(StringComparer.OrdinalIgnoreCase);
         int chunkIndex = indexHead;
 
         while (chunkIndex >= 0)
@@ -180,7 +193,7 @@ public sealed partial class ChmMetadataExtractor : BookMetadataExtractor
                     break;
 
                 if (!entries.ContainsKey(name))
-                    entries.Add(name, new ChmObjectEntry(name, contentSection, fileOffset, fileLength));
+                    entries.Add(name, new ChmObjectLocation(name, contentSection, fileOffset, (int)fileLength));
             }
 
             chunkIndex = nextChunk;
@@ -193,14 +206,44 @@ public sealed partial class ChmMetadataExtractor : BookMetadataExtractor
     private static bool TryReadObjectBytes(
         Stream stream,
         ChmArchive archive,
+        IChmCompressedObjectReader compressedReader,
         string path,
         out byte[] data)
     {
         data = [];
-        if (!archive.Entries.TryGetValue(NormalizeInternalPath(path), out var entry))
+        if (!archive.Entries.TryGetValue(NormalizeInternalPath(path), out var entry) ||
+            entry.Length <= 0 ||
+            entry.Length > MaxObjectLength)
+        {
+            return false;
+        }
+
+        if (entry.ContentSection == 0)
+            return TryReadSectionZeroObjectBytes(stream, archive, entry, out data);
+
+        return compressedReader.TryRead(entry, out data) && data.Length == entry.Length;
+    }
+
+    private static bool TryReadSectionZeroObjectBytes(
+        Stream stream,
+        ChmArchive archive,
+        string path,
+        out byte[] data)
+    {
+        data = [];
+        if (!archive.Entries.TryGetValue(NormalizeInternalPath(path), out var entry) || entry.ContentSection != 0)
             return false;
 
-        // The current managed reader only supports section 0 (uncompressed) objects.
+        return TryReadSectionZeroObjectBytes(stream, archive, entry, out data);
+    }
+
+    private static bool TryReadSectionZeroObjectBytes(
+        Stream stream,
+        ChmArchive archive,
+        ChmObjectLocation entry,
+        out byte[] data)
+    {
+        data = [];
         if (entry.ContentSection != 0 || entry.Length <= 0 || entry.Length > MaxObjectLength)
             return false;
 
@@ -217,11 +260,12 @@ public sealed partial class ChmMetadataExtractor : BookMetadataExtractor
     private static bool TryReadTextObject(
         Stream stream,
         ChmArchive archive,
+        IChmCompressedObjectReader compressedReader,
         string path,
         out string text)
     {
         text = string.Empty;
-        if (!TryReadObjectBytes(stream, archive, path, out var data))
+        if (!TryReadObjectBytes(stream, archive, compressedReader, path, out var data))
             return false;
 
         text = DecodeText(data);
@@ -380,7 +424,6 @@ public sealed partial class ChmMetadataExtractor : BookMetadataExtractor
 
         foreach (var entry in archive.Entries.Values
                      .Where(static entry =>
-                         entry.ContentSection == 0 &&
                          entry.Length is > 0 and <= MaxHtmlCandidateLength &&
                          IsHtmlPath(entry.Path))
                      .OrderBy(static entry => ScoreCandidatePath(entry.Path))
@@ -875,15 +918,9 @@ public sealed partial class ChmMetadataExtractor : BookMetadataExtractor
     private static partial Regex HtmlTagRegex();
 
     private sealed record ChmArchive(
-        IReadOnlyDictionary<string, ChmObjectEntry> Entries,
+        IReadOnlyDictionary<string, ChmObjectLocation> Entries,
         ulong DataOffset,
         uint ItsfLanguageId);
-
-    private sealed record ChmObjectEntry(
-        string Path,
-        int ContentSection,
-        long Offset,
-        long Length);
 
     private sealed class ChmWindowsMetadata
     {

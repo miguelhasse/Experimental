@@ -127,8 +127,9 @@ When running as an MCP server, the following tools are exposed:
 | MOBI   | ✓ | ✓ | ✓ | ✓ | ✓ | — | Published | ✓ |
 | CHM    | ✓ | ✓ (Best effort) | ✓ (Best effort) | ✓ (LCID) | ✓ (Best effort) | — | Modified (compile time) + Published (best effort) | ✓ (HHK/meta) |
 
-> MOBI and CHM metadata are extracted by parsing binary file formats directly — no third-party library required.
-> CHM enrichments combine structured container metadata with best-effort parsing of uncompressed internal index/HTML objects.
+> MOBI metadata is extracted by parsing the binary format directly with no third-party runtime dependency, including real-world record-0 layouts where the `MOBI` header is not fixed at a single offset.
+> CHM metadata uses an in-repo managed ITSF parser plus a vendored managed LZX decompressor for compressed internal objects.
+> CHM enrichments combine structured container metadata with best-effort parsing of internal HHK and HTML objects, whether those objects are stored uncompressed or in the standard compressed content section.
 
 ## Packages
 
@@ -147,7 +148,7 @@ When running as an MCP server, the following tools are exposed:
 # Build the full solution
 dotnet build EbookScanner.slnx
 
-# Run all unit tests (63 tests)
+# Run all unit tests (67 tests)
 dotnet test EbookScanner.slnx
 ```
 

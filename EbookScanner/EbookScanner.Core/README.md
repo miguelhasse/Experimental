@@ -126,6 +126,7 @@ Uses **VersOne.Epub**. Reads from the OPF package metadata:
 No external library. Parses the **Palm Database Format** binary structure:
 
 - PalmDB header (bytes 0–31): database name as fallback title
+- record 0 scanning: locates the `MOBI` header dynamically in the early record bytes so both legacy synthetic layouts and real-world Kindle layouts are supported
 - MOBI header: full title string offset/length
 - **EXTH block**: richest metadata, read record by record
 
@@ -146,14 +147,14 @@ Handles truncated or malformed files by falling back to the Palm DB name as titl
 
 ### CHM (`ChmMetadataExtractor`)
 
-No external library. Parses the **ITSF (Info-Tech Storage Format)** container binary:
+Uses an in-repo managed CHM reader plus a vendored managed LZX decompressor. Parses the **ITSF (Info-Tech Storage Format)** container binary:
 
 - ITSF header (v2/v3): verifies magic, reads directory section offset and data offset
 - ITSP directory header: locates the first PMGL leaf chunk and chunk block size
 - PMGL leaf chunks: walks chunk chain reading entries with variable-length encoded integers
-- internal object lookup for uncompressed section-0 files
+- internal object lookup for section-0 files plus the standard compressed content section
 - `/#SYSTEM`, `/#WINDOWS`, and `/#STRINGS` virtual files
-- optional `.hhk` and HTML topic parsing for best-effort enrichment when those objects are uncompressed
+- optional `.hhk` and HTML topic parsing for best-effort enrichment when those objects are stored either uncompressed or in the compressed content stream
 
 Key `#SYSTEM` tag codes used:
 
@@ -168,6 +169,7 @@ Additional CHM metadata sources:
 - `/#WINDOWS` + `/#STRINGS` recover alternate title, default topic, and HHK discovery
 - `.hhk` keywords populate `Tags`
 - HTML `<meta>` and visible content heuristics can populate `Authors`, `Publisher`, `Description`, `ISBN`, `PublishedDate`, and fallback tags
+- compressed-object retrieval reads the standard `::DataSpace/Storage/MSCompressed/*` control objects and `Content` stream through a managed LZX path
 
 The LCID is converted to a BCP-47 language tag via `CultureInfo.GetCultureInfo(lcid).Name`, and compile/build time is mapped to `ModifiedDate`.
 
