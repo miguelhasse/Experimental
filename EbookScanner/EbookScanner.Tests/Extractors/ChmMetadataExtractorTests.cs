@@ -1,14 +1,12 @@
+using System.Text;
 using EbookScanner.Core.Extractors;
 
 namespace EbookScanner.Tests.Extractors;
 
 /// <summary>
 /// Tests the ChmMetadataExtractor using synthetically constructed CHM binary files.
-/// The minimal CHM layout used here is:
-///   [0..95]    ITSF header v3
-///   [96..179]  ITSP header (84 bytes, dir section)
-///   [180..691] PMGL chunk (512 bytes, one directory chunk)
-///   [692..]    /#SYSTEM data
+/// The builder in this file produces a minimal v3 CHM with one PMGL directory chunk
+/// and any number of section-0 (uncompressed) objects.
 /// </summary>
 public sealed class ChmMetadataExtractorTests
 {
@@ -41,7 +39,9 @@ public sealed class ChmMetadataExtractorTests
     [Fact]
     public async Task ExtractAsync_ValidChmFile_ExtractsTitle()
     {
-        var filePath = CreateMinimalChmFile("My CHM Book");
+        var filePath = CreateChmFile(new ChmFixtureOptions(
+            Title: "My CHM Book"));
+
         try
         {
             var metadata = await _extractor.ExtractAsync(filePath, TestContext.Current.CancellationToken);
@@ -57,7 +57,7 @@ public sealed class ChmMetadataExtractorTests
     [Fact]
     public async Task ExtractAsync_ValidChmFile_HasCorrectFormat()
     {
-        var filePath = CreateMinimalChmFile("Title");
+        var filePath = CreateChmFile(new ChmFixtureOptions(Title: "Title"));
         try
         {
             var metadata = await _extractor.ExtractAsync(filePath, TestContext.Current.CancellationToken);
@@ -73,7 +73,7 @@ public sealed class ChmMetadataExtractorTests
     [Fact]
     public async Task ExtractAsync_ValidChmFile_HasCorrectFileName()
     {
-        var filePath = CreateMinimalChmFile("Title");
+        var filePath = CreateChmFile(new ChmFixtureOptions(Title: "Title"));
         try
         {
             var metadata = await _extractor.ExtractAsync(filePath, TestContext.Current.CancellationToken);
@@ -89,13 +89,128 @@ public sealed class ChmMetadataExtractorTests
     [Fact]
     public async Task ExtractAsync_ValidChmFileWithLanguage_ExtractsLanguage()
     {
-        const uint enUsLcid = 1033; // en-US
-        var filePath = CreateMinimalChmFile("Title", lcid: enUsLcid);
+        const uint enUsLcid = 1033;
+        var filePath = CreateChmFile(new ChmFixtureOptions(
+            Title: "Title",
+            HeaderLcid: enUsLcid,
+            SystemLcid: enUsLcid));
+
         try
         {
             var metadata = await _extractor.ExtractAsync(filePath, TestContext.Current.CancellationToken);
 
             Assert.Equal("en-US", metadata.Language);
+        }
+        finally
+        {
+            File.Delete(filePath);
+        }
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ValidChmFileWithSystemTimestamp_ExtractsModifiedDate()
+    {
+        var timestamp = new DateTimeOffset(2024, 03, 05, 12, 30, 45, TimeSpan.Zero);
+        var filePath = CreateChmFile(new ChmFixtureOptions(
+            Title: "Title",
+            SystemFileTimeUtc: timestamp));
+
+        try
+        {
+            var metadata = await _extractor.ExtractAsync(filePath, TestContext.Current.CancellationToken);
+
+            Assert.Equal(timestamp, metadata.ModifiedDate);
+        }
+        finally
+        {
+            File.Delete(filePath);
+        }
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ValidChmFileWithWindowsStrings_UsesIndexFileForTags()
+    {
+        const string hhk = """
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<HTML><BODY>
+<UL>
+  <LI><OBJECT type="text/sitemap">
+      <param name="Name" value="Programming">
+      <param name="Local" value="index.html">
+  </OBJECT>
+  <LI><OBJECT type="text/sitemap">
+      <param name="Name" value="CSharp">
+      <param name="Local" value="index.html">
+  </OBJECT>
+</UL>
+</BODY></HTML>
+""";
+
+        var filePath = CreateChmFile(new ChmFixtureOptions(
+            Title: "Title",
+            WindowTitle: "Window Title",
+            DefaultTopic: "/index.html",
+            IndexFile: "/book.hhk",
+            AdditionalFiles:
+            [
+                new ChmFixtureFile("/book.hhk", Encoding.UTF8.GetBytes(hhk))
+            ]));
+
+        try
+        {
+            var metadata = await _extractor.ExtractAsync(filePath, TestContext.Current.CancellationToken);
+
+            Assert.NotNull(metadata.Tags);
+            Assert.Equal(["Programming", "CSharp"], metadata.Tags);
+            Assert.Equal("Title", metadata.Title);
+        }
+        finally
+        {
+            File.Delete(filePath);
+        }
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ValidChmFileWithHtmlMetadata_ExtractsEnhancedMetadata()
+    {
+        const string html = """
+<!doctype html>
+<html>
+<head>
+  <title>Actual HTML Title</title>
+  <meta name="author" content="Ada Lovelace; Grace Hopper" />
+  <meta name="publisher" content="Tech Books Press" />
+  <meta name="description" content="A practical guide to CHM metadata." />
+  <meta name="keywords" content="metadata, chm, parsing" />
+  <meta name="dc.date" content="2021-06-15" />
+</head>
+<body>
+  <p>ISBN: 978-1-4028-9462-6</p>
+</body>
+</html>
+""";
+
+        var filePath = CreateChmFile(new ChmFixtureOptions(
+            Title: null,
+            DefaultTopic: "/index.html",
+            AdditionalFiles:
+            [
+                new ChmFixtureFile("/index.html", Encoding.UTF8.GetBytes(html))
+            ]));
+
+        try
+        {
+            var metadata = await _extractor.ExtractAsync(filePath, TestContext.Current.CancellationToken);
+
+            Assert.Equal("Actual HTML Title", metadata.Title);
+            Assert.NotNull(metadata.Authors);
+            Assert.Equal(["Ada Lovelace", "Grace Hopper"], metadata.Authors);
+            Assert.Equal("Tech Books Press", metadata.Publisher);
+            Assert.Equal("A practical guide to CHM metadata.", metadata.Description);
+            Assert.Equal("9781402894626", metadata.Isbn);
+            Assert.Equal(new DateTimeOffset(2021, 06, 15, 0, 0, 0, TimeSpan.Zero), metadata.PublishedDate);
+            Assert.NotNull(metadata.Tags);
+            Assert.Equal(["metadata", "chm", "parsing"], metadata.Tags);
         }
         finally
         {
@@ -140,156 +255,290 @@ public sealed class ChmMetadataExtractorTests
         }
     }
 
-    /// <summary>
-    /// Builds a minimal but structurally valid CHM file in memory containing a
-    /// /#SYSTEM block with the given title (and optionally a language LCID).
-    /// </summary>
-    private static string CreateMinimalChmFile(string title, uint lcid = 0)
+    private static string CreateChmFile(ChmFixtureOptions options)
     {
         var path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".chm");
         using var ms = new MemoryStream();
 
-        // ── Layout constants ────────────────────────────────────────────────────
-        const uint dirOffset  = 96;   // ITSF header is exactly 96 bytes (v3)
-        const uint itspHdrLen = 84;   // ITSP header is exactly 84 bytes
-        const uint blockLen   = 512;  // PMGL chunk size
-        const uint dataOffset = dirOffset + itspHdrLen + blockLen; // = 692
+        const uint dirOffset = 96;
+        const uint itspHeaderLength = 84;
+        const uint blockLength = 2048;
+        const uint dataOffset = dirOffset + itspHeaderLength + blockLength;
 
-        var systemData = BuildSystemData(title, lcid);
+        var files = new List<ChmFixtureFile>();
+        var systemData = BuildSystemData(options);
+        files.Add(new ChmFixtureFile("/#SYSTEM", systemData));
 
-        WriteItsfHeader(ms, dirOffset, itspHdrLen + blockLen, dataOffset, lcid);
-        WriteItspHeader(ms, itspHdrLen, blockLen);
-        WritePmglChunk(ms, blockLen, systemData.Length);
-        ms.Write(systemData);
+        if (!string.IsNullOrWhiteSpace(options.WindowTitle) ||
+            !string.IsNullOrWhiteSpace(options.DefaultTopic) ||
+            !string.IsNullOrWhiteSpace(options.IndexFile))
+        {
+            var stringsData = BuildStringsData(options, out var titleOffset, out var defaultOffset, out var indexOffset);
+            var windowsData = BuildWindowsData(titleOffset, defaultOffset, indexOffset);
+            files.Add(new ChmFixtureFile("/#WINDOWS", windowsData));
+            files.Add(new ChmFixtureFile("/#STRINGS", stringsData));
+        }
+
+        if (options.AdditionalFiles is not null)
+            files.AddRange(options.AdditionalFiles);
+
+        WriteItsfHeader(ms, dirOffset, itspHeaderLength + blockLength, dataOffset, options.HeaderLcid);
+        WriteItspHeader(ms, itspHeaderLength, blockLength);
+        WritePmglChunk(ms, blockLength, files);
+        WriteSectionZeroData(ms, files);
 
         File.WriteAllBytes(path, ms.ToArray());
         return path;
     }
 
-    // ── Binary structure builders ────────────────────────────────────────────────
-
-    private static void WriteItsfHeader(
-        Stream ms, uint dirOffset, uint dirLen, uint dataOffset, uint langId)
+    private static void WriteSectionZeroData(Stream stream, IReadOnlyList<ChmFixtureFile> files)
     {
-        ms.Write("ITSF"u8);                        // magic
-        WriteLE32(ms, 3);                           // version 3
-        WriteLE32(ms, 96);                          // header length
-        WriteLE32(ms, 1);                           // unknown
-        WriteLE32(ms, 0);                           // timestamp
-        WriteLE32(ms, langId);                      // language ID
-        ms.Write(new byte[16]);                     // GUID1
-        ms.Write(new byte[16]);                     // GUID2
-        WriteLE64(ms, 0);                           // unknown offset (section 0)
-        WriteLE64(ms, 0);                           // unknown length (section 0)
-        WriteLE64(ms, dirOffset);                   // dir section offset  (0x48)
-        WriteLE64(ms, dirLen);                      // dir section length  (0x50)
-        WriteLE64(ms, dataOffset);                  // data offset         (0x58, v3)
+        foreach (var file in files)
+        {
+            stream.Write(file.Data);
+        }
     }
 
-    private static void WriteItspHeader(Stream ms, uint itspHdrLen, uint blockLen)
-    {
-        ms.Write("ITSP"u8);                        // magic
-        WriteLE32(ms, 1);                           // version
-        WriteLE32(ms, itspHdrLen);                  // header length (84)
-        WriteLE32(ms, 0);                           // unknown
-        WriteLE32(ms, blockLen);                    // chunk size
-        WriteLE32(ms, 2);                           // quickref density
-        WriteLE32(ms, 1);                           // index depth (1 = flat, no index)
-        WriteLE32(ms, unchecked((uint)-1));         // index_root  = -1 (no index chunk)
-        WriteLE32(ms, 0);                           // index_head  = chunk 0 (first PMGL)
-        WriteLE32(ms, 0);                           // index_tail  = chunk 0 (only one chunk)
-        WriteLE32(ms, unchecked((uint)-1));         // unknown = -1
-        WriteLE32(ms, 1);                           // num_blocks
-        WriteLE32(ms, 0);                           // lang_id
-        ms.Write(new byte[16]);                     // GUID
-        ms.Write(new byte[16]);                     // unknown_0044
-    }
-
-    private static void WritePmglChunk(Stream ms, uint blockLen, int systemDataLen)
-    {
-        // ── Build the /#SYSTEM entry ─────────────────────────────────────────────
-        using var entryMs = new MemoryStream();
-        WriteEncInt(entryMs, 8);                    // name length = len("/#SYSTEM")
-        entryMs.Write("/#SYSTEM"u8);
-        WriteEncInt(entryMs, 0);                    // content section = 0 (uncompressed)
-        WriteEncInt(entryMs, 0);                    // file offset = 0
-        WriteEncInt(entryMs, systemDataLen);        // file length
-
-        int entrySize  = (int)entryMs.Length;
-        uint freeSpace = blockLen - 20u - (uint)entrySize;
-
-        // ── PMGL header (20 bytes) ───────────────────────────────────────────────
-        ms.Write("PMGL"u8);
-        WriteLE32(ms, freeSpace);                   // free space at end of chunk
-        WriteLE32(ms, 0);                           // unknown
-        WriteLE32(ms, unchecked((uint)-1));         // block_prev = -1
-        WriteLE32(ms, unchecked((uint)-1));         // block_next = -1
-
-        // ── Entry ───────────────────────────────────────────────────────────────
-        entryMs.Position = 0;
-        entryMs.CopyTo(ms);
-
-        // ── Padding to fill the chunk ────────────────────────────────────────────
-        ms.Write(new byte[freeSpace]);
-    }
-
-    private static byte[] BuildSystemData(string title, uint lcid)
+    private static byte[] BuildSystemData(ChmFixtureOptions options)
     {
         using var ms = new MemoryStream();
+        WriteLE32(ms, 3);
 
-        WriteLE32(ms, 3);                           // version = 3
+        if (!string.IsNullOrWhiteSpace(options.Title))
+        {
+            var titleBytes = Encoding.UTF8.GetBytes(options.Title + "\0");
+            WriteLE16(ms, 3);
+            WriteLE16(ms, (ushort)titleBytes.Length);
+            ms.Write(titleBytes);
+        }
 
-        // Code 3: Title (null-terminated UTF-8 string)
-        var titleBytes = System.Text.Encoding.UTF8.GetBytes(title + "\0");
-        WriteLE16(ms, 3);
-        WriteLE16(ms, (ushort)titleBytes.Length);
-        ms.Write(titleBytes);
+        if (options.SystemLcid != 0 || options.SystemFileTimeUtc is not null)
+        {
+            Span<byte> payload = stackalloc byte[28];
+            if (options.SystemLcid != 0)
+                WriteLE32(payload, 0, options.SystemLcid);
+            if (options.SystemFileTimeUtc is not null)
+                WriteLE64(payload, 20, (ulong)options.SystemFileTimeUtc.Value.ToFileTime());
 
-        // Code 10: LCID (4-byte language ID)
-        if (lcid != 0)
+            WriteLE16(ms, 4);
+            WriteLE16(ms, 28);
+            ms.Write(payload);
+        }
+
+        if (options.LegacyCode10Lcid != 0)
         {
             WriteLE16(ms, 10);
             WriteLE16(ms, 4);
-            WriteLE32(ms, lcid);
+            WriteLE32(ms, options.LegacyCode10Lcid);
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.DefaultTopic))
+        {
+            var topicBytes = Encoding.UTF8.GetBytes(options.DefaultTopic.TrimStart('/') + "\0");
+            WriteLE16(ms, 2);
+            WriteLE16(ms, (ushort)topicBytes.Length);
+            ms.Write(topicBytes);
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.IndexFile))
+        {
+            var indexBytes = Encoding.UTF8.GetBytes(options.IndexFile.TrimStart('/') + "\0");
+            WriteLE16(ms, 1);
+            WriteLE16(ms, (ushort)indexBytes.Length);
+            ms.Write(indexBytes);
         }
 
         return ms.ToArray();
     }
 
-    // ── Encoding helpers ─────────────────────────────────────────────────────────
+    private static byte[] BuildStringsData(
+        ChmFixtureOptions options,
+        out uint titleOffset,
+        out uint defaultOffset,
+        out uint indexOffset)
+    {
+        using var ms = new MemoryStream();
+        ms.WriteByte(0);
 
-    /// <summary>
-    /// Writes a CHM variable-length encoded integer (big-endian, 7 bits per byte).
-    /// </summary>
-    private static void WriteEncInt(Stream ms, int value)
+        titleOffset = WriteCString(ms, options.WindowTitle);
+        defaultOffset = WriteCString(ms, options.DefaultTopic?.TrimStart('/'));
+        indexOffset = WriteCString(ms, options.IndexFile?.TrimStart('/'));
+
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildWindowsData(uint titleOffset, uint defaultOffset, uint indexOffset)
+    {
+        const uint entrySize = 0x6C;
+        using var ms = new MemoryStream();
+        WriteLE32(ms, 1);
+        WriteLE32(ms, entrySize);
+
+        var entry = new byte[entrySize];
+        WriteLE32(entry, 0x14, titleOffset);
+        WriteLE32(entry, 0x64, indexOffset);
+        WriteLE32(entry, 0x68, defaultOffset);
+        ms.Write(entry);
+        return ms.ToArray();
+    }
+
+    private static uint WriteCString(Stream stream, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return 0;
+
+        uint offset = (uint)stream.Position;
+        var bytes = Encoding.UTF8.GetBytes(value + "\0");
+        stream.Write(bytes);
+        return offset;
+    }
+
+    private static void WritePmglChunk(Stream stream, uint blockLength, IReadOnlyList<ChmFixtureFile> files)
+    {
+        using var entriesStream = new MemoryStream();
+        long currentOffset = 0;
+        foreach (var file in files)
+        {
+            WriteEncInt(entriesStream, file.Path.Length);
+            entriesStream.Write(Encoding.UTF8.GetBytes(file.Path));
+            WriteEncInt(entriesStream, 0);
+            WriteEncInt(entriesStream, currentOffset);
+            WriteEncInt(entriesStream, file.Data.Length);
+            currentOffset += file.Data.Length;
+        }
+
+        int entrySize = (int)entriesStream.Length;
+        uint freeSpace = blockLength - 20u - (uint)entrySize;
+
+        stream.Write("PMGL"u8);
+        WriteLE32(stream, freeSpace);
+        WriteLE32(stream, 0);
+        WriteLE32(stream, unchecked((uint)-1));
+        WriteLE32(stream, unchecked((uint)-1));
+
+        entriesStream.Position = 0;
+        entriesStream.CopyTo(stream);
+        stream.Write(new byte[freeSpace]);
+    }
+
+    private static void WriteItsfHeader(Stream stream, uint dirOffset, uint dirLength, uint dataOffset, uint langId)
+    {
+        stream.Write("ITSF"u8);
+        WriteLE32(stream, 3);
+        WriteLE32(stream, 96);
+        WriteLE32(stream, 1);
+        WriteLE32(stream, 0);
+        WriteLE32(stream, langId);
+        stream.Write(new byte[16]);
+        stream.Write(new byte[16]);
+        WriteLE64(stream, 0);
+        WriteLE64(stream, 0);
+        WriteLE64(stream, dirOffset);
+        WriteLE64(stream, dirLength);
+        WriteLE64(stream, dataOffset);
+    }
+
+    private static void WriteItspHeader(Stream stream, uint headerLength, uint blockLength)
+    {
+        stream.Write("ITSP"u8);
+        WriteLE32(stream, 1);
+        WriteLE32(stream, headerLength);
+        WriteLE32(stream, 0);
+        WriteLE32(stream, blockLength);
+        WriteLE32(stream, 2);
+        WriteLE32(stream, 1);
+        WriteLE32(stream, unchecked((uint)-1));
+        WriteLE32(stream, 0);
+        WriteLE32(stream, 0);
+        WriteLE32(stream, unchecked((uint)-1));
+        WriteLE32(stream, 1);
+        WriteLE32(stream, 0);
+        stream.Write(new byte[16]);
+        stream.Write(new byte[16]);
+    }
+
+    private static void WriteEncInt(Stream stream, long value)
     {
         if (value < 0x80)
         {
-            ms.WriteByte((byte)value);
+            stream.WriteByte((byte)value);
             return;
         }
-        // Two bytes: first byte has high bit set, second does not.
-        ms.WriteByte((byte)((value >> 7) | 0x80));
-        ms.WriteByte((byte)(value & 0x7F));
+
+        var bytes = new List<byte>();
+        long remaining = value;
+        bytes.Add((byte)(remaining & 0x7F));
+        remaining >>= 7;
+        while (remaining > 0)
+        {
+            bytes.Add((byte)((remaining & 0x7F) | 0x80));
+            remaining >>= 7;
+        }
+
+        for (int i = bytes.Count - 1; i >= 0; i--)
+        {
+            byte b = bytes[i];
+            if (i == 0)
+                b &= 0x7F;
+            else
+                b |= 0x80;
+
+            stream.WriteByte(b);
+        }
     }
 
-    private static void WriteLE16(Stream ms, ushort v)
+    private static void WriteLE16(Stream stream, ushort value)
     {
-        ms.WriteByte((byte)v);
-        ms.WriteByte((byte)(v >> 8));
+        stream.WriteByte((byte)value);
+        stream.WriteByte((byte)(value >> 8));
     }
 
-    private static void WriteLE32(Stream ms, uint v)
+    private static void WriteLE32(Stream stream, uint value)
     {
-        ms.WriteByte((byte)v);
-        ms.WriteByte((byte)(v >> 8));
-        ms.WriteByte((byte)(v >> 16));
-        ms.WriteByte((byte)(v >> 24));
+        stream.WriteByte((byte)value);
+        stream.WriteByte((byte)(value >> 8));
+        stream.WriteByte((byte)(value >> 16));
+        stream.WriteByte((byte)(value >> 24));
     }
 
-    private static void WriteLE64(Stream ms, ulong v)
+    private static void WriteLE64(Stream stream, ulong value)
     {
-        WriteLE32(ms, (uint)v);
-        WriteLE32(ms, (uint)(v >> 32));
+        WriteLE32(stream, (uint)value);
+        WriteLE32(stream, (uint)(value >> 32));
     }
+
+    private static void WriteLE32(Span<byte> buffer, int offset, uint value)
+    {
+        buffer[offset] = (byte)value;
+        buffer[offset + 1] = (byte)(value >> 8);
+        buffer[offset + 2] = (byte)(value >> 16);
+        buffer[offset + 3] = (byte)(value >> 24);
+    }
+
+    private static void WriteLE64(Span<byte> buffer, int offset, ulong value)
+    {
+        WriteLE32(buffer, offset, (uint)value);
+        WriteLE32(buffer, offset + 4, (uint)(value >> 32));
+    }
+
+    private static void WriteLE32(byte[] buffer, int offset, uint value)
+    {
+        buffer[offset] = (byte)value;
+        buffer[offset + 1] = (byte)(value >> 8);
+        buffer[offset + 2] = (byte)(value >> 16);
+        buffer[offset + 3] = (byte)(value >> 24);
+    }
+
+    private sealed record ChmFixtureOptions(
+        string? Title = null,
+        uint HeaderLcid = 0,
+        uint SystemLcid = 0,
+        DateTimeOffset? SystemFileTimeUtc = null,
+        uint LegacyCode10Lcid = 0,
+        string? WindowTitle = null,
+        string? DefaultTopic = null,
+        string? IndexFile = null,
+        IReadOnlyList<ChmFixtureFile>? AdditionalFiles = null);
+
+    private sealed record ChmFixtureFile(string Path, byte[] Data);
 }

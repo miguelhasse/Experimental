@@ -90,6 +90,9 @@ EbookScanner.Tests/
 | `ExtractAsync_ValidChmFile_HasCorrectFormat` | Format string is `"CHM"` |
 | `ExtractAsync_ValidChmFile_HasCorrectFileName` | FileName matches the input file |
 | `ExtractAsync_ValidChmFileWithLanguage_ExtractsLanguage` | LCID 1033 → `"en-US"` |
+| `ExtractAsync_ValidChmFileWithSystemTimestamp_ExtractsModifiedDate` | `#SYSTEM` compile time populates `ModifiedDate` |
+| `ExtractAsync_ValidChmFileWithWindowsStrings_UsesIndexFileForTags` | `#WINDOWS` / `#STRINGS` discover HHK tags |
+| `ExtractAsync_ValidChmFileWithHtmlMetadata_ExtractsEnhancedMetadata` | HTML heuristics populate title/authors/publisher/ISBN/date/tags |
 | `ExtractAsync_TruncatedFile_FallsBackGracefully` | Short file doesn't throw |
 | `ExtractAsync_InvalidMagic_ReturnsNullTitle` | Non-CHM file returns null title |
 
