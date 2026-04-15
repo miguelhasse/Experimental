@@ -70,7 +70,16 @@ public sealed partial class PptxConverter : DocumentConverter
             return;
         }
 
-        foreach (var child in container.ChildElements)
+        // Sort shapes by visual position (top-to-bottom, left-to-right) to match reading order,
+        // matching the behaviour of upstream python-pptx which sorts by (shape.top, shape.left).
+        var orderedChildren = container.ChildElements
+            .Select(child => (child, pos: GetShapePosition(child)))
+            .OrderBy(t => t.pos.Y)
+            .ThenBy(t => t.pos.X)
+            .Select(t => t.child)
+            .ToList();
+
+        foreach (var child in orderedChildren)
         {
             if (child is Presentation.Shape shape)
             {
@@ -285,6 +294,25 @@ public sealed partial class PptxConverter : DocumentConverter
         var name = series.Element(CNs + "tx")?.Descendants(CNs + "v").FirstOrDefault()?.Value
             ?? series.Element(CNs + "tx")?.Descendants(ANs + "t").FirstOrDefault()?.Value;
         return string.IsNullOrWhiteSpace(name) ? null : NormalizeWhitespace(name);
+    }
+
+    /// <summary>
+    /// Returns the (Y, X) position of a shape element in EMUs by reading the
+    /// <c>a:off</c> element's <c>y</c> and <c>x</c> attributes.  Falls back to
+    /// <see cref="long.MaxValue"/> so un-positioned elements sort last.
+    /// </summary>
+    private static (long Y, long X) GetShapePosition(OpenXmlElement element)
+    {
+        var doc = XDocument.Parse(element.OuterXml);
+        var off = doc.Descendants(ANs + "off").FirstOrDefault();
+        if (off is null)
+        {
+            return (long.MaxValue, long.MaxValue);
+        }
+
+        var y = (long?)off.Attribute("y") ?? long.MaxValue;
+        var x = (long?)off.Attribute("x") ?? long.MaxValue;
+        return (y, x);
     }
 
     private static bool IsTitlePlaceholder(Presentation.Shape shape)

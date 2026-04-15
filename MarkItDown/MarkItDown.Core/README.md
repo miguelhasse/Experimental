@@ -18,6 +18,7 @@ The portable conversion library at the heart of the solution. It exposes `MarkIt
 | `UglyToad.PdfPig` | 1.7.0-custom-5 | PDF text extraction |
 | `VersOne.Epub` | 3.3.6 | EPUB parsing |
 | `System.ServiceModel.Syndication` | 10.0.5 | RSS / Atom feeds |
+| `Microsoft.Extensions.AI.Abstractions` | 10.5.0 | `IChatClient` interface for LLM captioning (optional) |
 
 ---
 
@@ -28,11 +29,18 @@ The portable conversion library at the heart of the solution. It exposes `MarkIt
 The main entry point. Implements `IDisposable`.
 
 ```csharp
-// Create with a shared HttpClient (recommended in server scenarios)
+// Minimal — no LLM captioning, service manages its own HttpClient
+using var service = new MarkItDownService();
+
+// With a shared HttpClient (recommended in server/DI scenarios)
 var service = new MarkItDownService(httpClient);
 
-// Or let the service manage its own HttpClient
-using var service = new MarkItDownService();
+// With LLM captioning enabled (see "LLM image captioning" section below)
+using var service = new MarkItDownService(
+    httpClient: httpClient,       // optional
+    llmClient:  chatClient,       // any IChatClient — see below
+    llmModel:   "gpt-4o",         // optional; forwarded as ChatOptions.ModelId
+    llmPrompt:  null);            // optional; null → default caption prompt
 ```
 
 #### Conversion methods
@@ -143,8 +151,11 @@ public abstract class DocumentConverter
 Passed to every converter's `ConvertAsync`. Provides:
 
 ```csharp
-MarkItDownService Service    { get; }  // for recursive conversion (e.g. ZipConverter)
-HttpClient        HttpClient { get; }  // for converters that need to make HTTP requests
+MarkItDownService Service     { get; }  // for recursive conversion (e.g. ZipConverter)
+HttpClient        HttpClient  { get; }  // for converters that need to make HTTP requests
+IChatClient?      LlmClient   { get; }  // null if LLM captioning not configured
+string?           LlmModel    { get; }  // forwarded to ChatOptions.ModelId
+string?           LlmPrompt   { get; }  // custom caption prompt, or null for default
 ```
 
 ---
@@ -203,6 +214,116 @@ Both derive from `FileConversionException`. `UnsupportedFormatException` is seal
 
 ---
 
+## LLM image captioning
+
+`MarkItDownService` accepts any [`IChatClient`](https://learn.microsoft.com/dotnet/api/microsoft.extensions.ai.ichatclient) from the **Microsoft.Extensions.AI** abstraction layer. When an `IChatClient` is supplied, three built-in converters automatically request a text description for each image and append it to the Markdown output:
+
+| Converter | Where the caption appears |
+|---|---|
+| `ImageConverter` | Appended as `# Description:\n<caption>` after the EXIF metadata block |
+| `PptxConverter` | Prepended to the picture's alt-text: `<caption> <alt-text>` |
+| `PdfConverter` | Appended after page text as `[Description: <caption>]` |
+
+`MarkItDown.Core` only references `Microsoft.Extensions.AI.Abstractions` (pure interfaces, no concrete provider). The consuming application decides which provider to use.
+
+### Wiring a provider
+
+#### OpenAI
+
+```csharp
+// dotnet add package Microsoft.Extensions.AI.OpenAI
+using Microsoft.Extensions.AI;
+using OpenAI;
+
+IChatClient chatClient = new OpenAIClient("sk-...")
+    .GetChatClient("gpt-4o")
+    .AsIChatClient();
+
+using var service = new MarkItDownService(
+    llmClient: chatClient,
+    llmModel:  "gpt-4o");
+```
+
+#### Azure OpenAI
+
+```csharp
+// dotnet add package Microsoft.Extensions.AI.OpenAI
+using Azure;
+using Azure.AI.OpenAI;
+using Microsoft.Extensions.AI;
+
+IChatClient chatClient = new AzureOpenAIClient(
+        new Uri("https://<resource>.openai.azure.com/"),
+        new AzureKeyCredential("<api-key>"))
+    .GetChatClient("<deployment-name>")
+    .AsIChatClient();
+
+using var service = new MarkItDownService(llmClient: chatClient);
+```
+
+#### Ollama (local model)
+
+```csharp
+// dotnet add package OllamaSharp
+using Microsoft.Extensions.AI;
+using OllamaSharp;
+
+IChatClient chatClient = new OllamaApiClient(new Uri("http://localhost:11434"))
+    .AsChatClient("llava");
+
+using var service = new MarkItDownService(
+    llmClient: chatClient,
+    llmModel:  "llava");
+```
+
+#### GitHub Models
+
+```csharp
+// dotnet add package Microsoft.Extensions.AI.OpenAI
+using Microsoft.Extensions.AI;
+using OpenAI;
+
+IChatClient chatClient = new OpenAIClient(
+        new ApiKeyCredential(Environment.GetEnvironmentVariable("GITHUB_TOKEN")!),
+        new OpenAIClientOptions { Endpoint = new Uri("https://models.inference.ai.azure.com") })
+    .GetChatClient("gpt-4o")
+    .AsIChatClient();
+
+using var service = new MarkItDownService(llmClient: chatClient);
+```
+
+### Custom prompt
+
+The default prompt is `"Write a detailed caption for this image."` (matching the upstream Python default). Override it per service instance:
+
+```csharp
+using var service = new MarkItDownService(
+    llmClient: chatClient,
+    llmPrompt: "Describe this image in one sentence, focusing on any text visible.");
+```
+
+### Dependency injection
+
+```csharp
+// Program.cs
+builder.Services.AddSingleton<IChatClient>(_ =>
+    new OpenAIClient("sk-...").GetChatClient("gpt-4o").AsIChatClient());
+
+builder.Services.AddHttpClient();
+
+builder.Services.AddSingleton<MarkItDownService>(sp =>
+    new MarkItDownService(
+        httpClient: sp.GetRequiredService<IHttpClientFactory>().CreateClient("markitdown"),
+        llmClient:  sp.GetRequiredService<IChatClient>(),
+        llmModel:   "gpt-4o"));
+```
+
+### Error handling
+
+LLM errors are non-fatal. If captioning fails for any reason (network error, rate limit, unsupported image encoding), `LlmHelpers.CaptionImageAsync` returns `null` and the converter continues normally. The resulting Markdown always contains the document text — the caption is purely additive.
+
+---
+
 ## Adding a custom converter
 
 ```csharp
@@ -245,6 +366,18 @@ builder.Services.AddHttpClient();   // or use IHttpClientFactory
 builder.Services.AddSingleton<MarkItDownService>(sp =>
     new MarkItDownService(sp.GetRequiredService<IHttpClientFactory>()
                             .CreateClient("markitdown")));
+```
+
+To include LLM captioning, also register an `IChatClient`:
+
+```csharp
+builder.Services.AddSingleton<IChatClient>(_ =>
+    new OpenAIClient("sk-...").GetChatClient("gpt-4o").AsIChatClient());
+
+builder.Services.AddSingleton<MarkItDownService>(sp =>
+    new MarkItDownService(
+        httpClient: sp.GetRequiredService<IHttpClientFactory>().CreateClient("markitdown"),
+        llmClient:  sp.GetOptionalService<IChatClient>()));
 ```
 
 `MarkItDownService` is thread-safe after construction (converters are registered in the constructor). Register it as a **singleton**.

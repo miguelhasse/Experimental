@@ -2,12 +2,13 @@ using MarkItDown.Core.Models;
 using MarkItDown.Core.Utilities;
 using Microsoft.Extensions.AI;
 using System.Text;
+using System.Text.RegularExpressions;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Content;
 
 namespace MarkItDown.Core.Converters;
 
-public sealed class PdfConverter : DocumentConverter
+public sealed partial class PdfConverter : DocumentConverter
 {
     // Words whose Y-center differ by less than this fraction of average word height are on the same line.
     private const double LineGroupingTolerance = 0.5;
@@ -163,7 +164,45 @@ public sealed class PdfConverter : DocumentConverter
             sb.Append(lineStrings[i]);
         }
 
-        return sb.ToString().Trim();
+        return MergePartialNumberingLines(sb.ToString().Trim());
     }
+
+    /// <summary>
+    /// Merges MasterFormat partial numbering lines with the following line.
+    /// A line matching <c>^\.\d+$</c> (e.g. <c>.1</c>, <c>.10</c>) is a section number whose
+    /// integer prefix was rendered on the previous line; prepend it to the next line so that
+    /// "3" + ".1" + "Concrete" becomes "3.1 Concrete".
+    /// </summary>
+    private static string MergePartialNumberingLines(string text)
+    {
+        if (!text.Contains('.'))
+        {
+            return text;
+        }
+
+        var inputLines = text.Split('\n');
+        var result = new List<string>(inputLines.Length);
+
+        for (var i = 0; i < inputLines.Length; i++)
+        {
+            var line = inputLines[i];
+            if (PartialNumberingRegex().IsMatch(line.Trim()) && i + 1 < inputLines.Length)
+            {
+                // Merge: attach the partial number to the start of the next line.
+                var nextLine = inputLines[i + 1];
+                result.Add(line.Trim() + nextLine);
+                i++; // skip the next line since it's been merged
+            }
+            else
+            {
+                result.Add(line);
+            }
+        }
+
+        return string.Join('\n', result);
+    }
+
+    [GeneratedRegex(@"^\.\d+$")]
+    private static partial Regex PartialNumberingRegex();
 }
 

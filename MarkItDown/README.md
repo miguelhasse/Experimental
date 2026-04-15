@@ -3,7 +3,7 @@
 A C#/.NET 10 port of Microsoft's [markitdown](https://github.com/microsoft/markitdown) Python library — a converter-driven pipeline that turns virtually any document or URL into clean Markdown.
 
 The solution ships as three focused projects: a portable core library, a Native AOT CLI (with a built-in MCP server mode), and an xUnit test suite.  
-**70/70 tests passing. Matches or exceeds the upstream Python implementation for every shared format.**
+**78/78 tests passing. Matches or exceeds the upstream Python implementation for every shared format.**
 
 ---
 
@@ -19,7 +19,7 @@ The solution ships as three focused projects: a portable core library, a Native 
 |---|---|
 | [`MarkItDown.Core`](MarkItDown.Core/README.md) | Converter library — models, 15 converters, `MarkItDownService` |
 | [`MarkItDown.Cli`](MarkItDown.Cli/README.md) | Command-line tool + MCP server (`mcp` subcommand), Native AOT enabled |
-| [`MarkItDown.Tests`](MarkItDown.Tests/README.md) | xUnit integration tests — 70 tests across all formats |
+| [`MarkItDown.Tests`](MarkItDown.Tests/README.md) | xUnit integration tests — 78 tests across all formats |
 
 ---
 
@@ -138,6 +138,121 @@ service.RegisterConverter(new MyCustomConverter(), priority: 0.0);
 
 Converters are tried in ascending priority order. The first one whose `Accepts()` returns `true` handles the conversion. Throwing `UnsupportedFormatException` inside `ConvertAsync` falls through to the next candidate.
 
+### LLM image captioning
+
+`MarkItDownService` accepts any [`IChatClient`](https://learn.microsoft.com/dotnet/api/microsoft.extensions.ai.ichatclient) from **Microsoft.Extensions.AI**. When provided, `ImageConverter`, `PptxConverter`, and `PdfConverter` will automatically request a text description for each image and append it to the Markdown output.
+
+> **Supported converters:** `ImageConverter` (standalone images), `PptxConverter` (per picture shape), `PdfConverter` (per embedded image).
+
+#### Step 1 — add a provider package
+
+Pick any `IChatClient`-compatible package:
+
+| Provider | NuGet package |
+|---|---|
+| OpenAI / Azure OpenAI | `Microsoft.Extensions.AI.OpenAI` |
+| Ollama (local models) | `OllamaSharp` |
+| GitHub Models | `Microsoft.Extensions.AI.OpenAI` |
+| Any OpenAI-compatible endpoint | `Microsoft.Extensions.AI.OpenAI` |
+
+```powershell
+dotnet add package Microsoft.Extensions.AI.OpenAI
+```
+
+#### Step 2 — build an `IChatClient` and pass it to the service
+
+**OpenAI:**
+
+```csharp
+using Microsoft.Extensions.AI;
+using OpenAI;
+
+IChatClient chatClient = new OpenAIClient("sk-...")
+    .GetChatClient("gpt-4o")
+    .AsIChatClient();
+
+using var service = new MarkItDownService(
+    llmClient: chatClient,
+    llmModel:  "gpt-4o",          // forwarded in ChatOptions.ModelId
+    llmPrompt: null);             // null → "Write a detailed caption for this image."
+
+var result = await service.ConvertAsync("photo.jpg");
+// result.Markdown contains metadata + "# Description:\n<caption>"
+```
+
+**Azure OpenAI:**
+
+```csharp
+using Azure;
+using Azure.AI.OpenAI;
+using Microsoft.Extensions.AI;
+
+IChatClient chatClient = new AzureOpenAIClient(
+        new Uri("https://<resource>.openai.azure.com/"),
+        new AzureKeyCredential("<api-key>"))
+    .GetChatClient("<deployment-name>")
+    .AsIChatClient();
+
+using var service = new MarkItDownService(llmClient: chatClient);
+```
+
+**Ollama (local model):**
+
+```csharp
+using Microsoft.Extensions.AI;
+using OllamaSharp;
+
+IChatClient chatClient = new OllamaApiClient(new Uri("http://localhost:11434"))
+    .AsChatClient("llava");
+
+using var service = new MarkItDownService(
+    llmClient: chatClient,
+    llmModel:  "llava");
+```
+
+**GitHub Models:**
+
+```csharp
+using Microsoft.Extensions.AI;
+using OpenAI;
+
+IChatClient chatClient = new OpenAIClient(
+        new ApiKeyCredential(Environment.GetEnvironmentVariable("GITHUB_TOKEN")!),
+        new OpenAIClientOptions { Endpoint = new Uri("https://models.inference.ai.azure.com") })
+    .GetChatClient("gpt-4o")
+    .AsIChatClient();
+
+using var service = new MarkItDownService(llmClient: chatClient);
+```
+
+#### Step 3 — optional: override model and prompt per service instance
+
+```csharp
+using var service = new MarkItDownService(
+    llmClient: chatClient,
+    llmModel:  "gpt-4o-mini",                         // overrides ChatOptions.ModelId
+    llmPrompt: "Describe this image in one sentence."); // overrides default prompt
+```
+
+The default prompt when `llmPrompt` is `null` is: `"Write a detailed caption for this image."`
+
+#### Dependency injection
+
+```csharp
+// In Program.cs / Startup
+builder.Services.AddSingleton<IChatClient>(_ =>
+    new OpenAIClient("sk-...").GetChatClient("gpt-4o").AsIChatClient());
+
+builder.Services.AddSingleton<MarkItDownService>(sp =>
+    new MarkItDownService(
+        httpClient: sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
+        llmClient:  sp.GetRequiredService<IChatClient>()));
+```
+
+#### LLM errors are non-fatal
+
+If captioning fails (network error, rate-limit, unsupported image format), the converter continues without a caption. The error is swallowed silently — normal document text is always returned.
+
 ---
 
 ## Comparison with Python upstream
@@ -155,9 +270,9 @@ The C# port targets feature parity with [microsoft/markitdown](https://github.co
 | PDF | ✅ Near-full | Both layout-aware; upstream also extracts inline figures (pdfminer `LTFigure`) |
 | EPUB | ✅ Exceeds | C# emits `## Chapter Title` headings from NCX/NAV navigation; upstream does not |
 | RSS / Atom | ✅ Exceeds | C# emits Markdown links for feed and items, normalised RFC 1123 dates |
-| Images | ✅ Exceeds | C# supports more formats (GIF, BMP, TIFF, WebP) and requires no external binary |
+| Images | ✅ Exceeds | C# supports more formats (GIF, BMP, TIFF, WebP), requires no external binary, and adds LLM captioning via `IChatClient` |
 | ZIP | ✅ Full | C# adds path-traversal sanitisation |
-| YouTube | ✅ Full | Upstream additionally extracts transcripts via `youtube_transcript_api` |
+| YouTube | ⚠️ Near-full | C# extracts title + description; upstream also extracts transcripts via `youtube_transcript_api` |
 | Wikipedia | ✅ Full | Exact match — `mw-content-text`, `mw-page-title-main`, `# Title\n\n` heading prefix |
 | MOBI / AZW | 🆕 C# only | No upstream equivalent |
 | CHM | 🆕 C# only | No upstream equivalent |
@@ -172,7 +287,7 @@ The C# port targets feature parity with [microsoft/markitdown](https://github.co
 | Audio transcription | Requires Whisper ML model |
 | Bing SERP | Specific HTML selectors for Bing search result pages |
 | Azure Document Intelligence | Cloud API, premium feature — out of scope |
-| LLM image/slide captions | `llm_client`/`llm_model` hook — optional enhancement |
+| YouTube transcript extraction | Requires `youtube_transcript_api`; timedtext API not yet ported |
 | PPTX data URI images | `keep_data_uris=True` option — not yet ported |
 
 ### Performance characteristics
