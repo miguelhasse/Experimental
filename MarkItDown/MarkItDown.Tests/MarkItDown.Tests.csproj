@@ -29,6 +29,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MarkItDown.Core\MarkItDown.Core.csproj" />
+    <ProjectReference Include="..\MarkItDown.Azure\MarkItDown.Azure.csproj" />
   </ItemGroup>
 
 </Project>

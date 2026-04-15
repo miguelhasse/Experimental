@@ -36,7 +36,20 @@ public sealed partial class PdfConverter : DocumentConverter
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var pageText = ReconstructPageText(page.GetWords());
+            var wordList = page.GetWords().ToList();
+            string pageText;
+            try
+            {
+                if (TryExtractTabularContent(wordList, out var table) && table is not null)
+                    pageText = table;
+                else
+                    pageText = ReconstructPageText(wordList);
+            }
+            catch
+            {
+                pageText = ReconstructPageText(wordList);
+            }
+
             var imageCaptions = await ExtractImageCaptionsAsync(page, context, cancellationToken);
 
             var sb = new StringBuilder();
@@ -204,5 +217,96 @@ public sealed partial class PdfConverter : DocumentConverter
 
     [GeneratedRegex(@"^\.\d+$")]
     private static partial Regex PartialNumberingRegex();
+
+    private static bool TryExtractTabularContent(IReadOnlyList<Word> words, out string? table)
+    {
+        table = null;
+        if (words.Count < 4)
+            return false;
+
+        // Group words into rows by Y bottom coordinate (3.0 unit tolerance).
+        var sorted = words.OrderByDescending(w => w.BoundingBox.Bottom).ToList();
+        var rows = new List<List<Word>>();
+        foreach (var word in sorted)
+        {
+            double y = word.BoundingBox.Bottom;
+            var matched = rows.LastOrDefault(r => Math.Abs(r[0].BoundingBox.Bottom - y) <= 3.0);
+            if (matched is not null)
+                matched.Add(word);
+            else
+                rows.Add([word]);
+        }
+
+        // Sort each row left-to-right.
+        foreach (var row in rows)
+            row.Sort((a, b) => a.BoundingBox.Left.CompareTo(b.BoundingBox.Left));
+
+        // Split each row into cells by X gap > 10 units.
+        var cellRows = rows.Select(row =>
+        {
+            var cells = new List<string>();
+            var currentCell = new List<Word> { row[0] };
+            for (int i = 1; i < row.Count; i++)
+            {
+                double gap = row[i].BoundingBox.Left - row[i - 1].BoundingBox.Right;
+                if (gap > 10.0)
+                {
+                    cells.Add(string.Join(" ", currentCell.Select(w => w.Text)));
+                    currentCell = [row[i]];
+                }
+                else
+                {
+                    currentCell.Add(row[i]);
+                }
+            }
+            cells.Add(string.Join(" ", currentCell.Select(w => w.Text)));
+            return cells;
+        }).ToList();
+
+        // Decide if tabular: ≥2 rows with ≥2 cells AND ≥30% of all rows have ≥2 cells.
+        int multiCellRowCount = cellRows.Count(r => r.Count >= 2);
+        if (multiCellRowCount < 2 || (double)multiCellRowCount / cellRows.Count < 0.30)
+            return false;
+
+        // Mode of cells-per-row, capped at 8.
+        int colCount = cellRows
+            .GroupBy(r => r.Count)
+            .OrderByDescending(g => g.Count())
+            .First().Key;
+        colCount = Math.Min(colCount, 8);
+
+        // Build markdown table (first row = header).
+        var nl = Environment.NewLine;
+        var sb = new StringBuilder();
+
+        void AppendRow(IList<string> cells)
+        {
+            var padded = new string[colCount];
+            for (int i = 0; i < colCount; i++)
+            {
+                if (i < cells.Count - 1)
+                    padded[i] = cells[i];
+                else if (i == colCount - 1)
+                    // Merge any overflow cells into the last column.
+                    padded[i] = string.Join(" ", cells.Skip(i));
+                else
+                    padded[i] = string.Empty;
+            }
+            sb.Append("| ").Append(string.Join(" | ", padded)).Append(" |");
+        }
+
+        AppendRow(cellRows[0]);
+        sb.Append(nl);
+        sb.Append("| ").Append(string.Join(" | ", Enumerable.Repeat("---", colCount))).Append(" |");
+
+        for (int i = 1; i < cellRows.Count; i++)
+        {
+            sb.Append(nl);
+            AppendRow(cellRows[i]);
+        }
+
+        table = sb.ToString();
+        return true;
+    }
 }
 

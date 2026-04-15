@@ -1,3 +1,5 @@
+using Azure;
+using MarkItDown.Azure;
 using MarkItDown.Core;
 using MarkItDown.Core.Converters;
 using MarkItDown.Core.Exceptions;
@@ -12,6 +14,19 @@ public sealed class ConverterTests : IDisposable
     private readonly MarkItDownService _service = new();
 
     public void Dispose() => _service.Dispose();
+
+    [Fact]
+    public void DocumentIntelligenceConverter_AcceptsSupportedFormats()
+    {
+        var converter = new DocumentIntelligenceConverter(
+            "https://example.cognitiveservices.azure.com",
+            new AzureKeyCredential("fake-key"));
+
+        Assert.True(converter.Accepts(Stream.Null, new StreamInfo(Extension: ".pdf")));
+        Assert.True(converter.Accepts(Stream.Null, new StreamInfo(Extension: ".docx")));
+        Assert.True(converter.Accepts(Stream.Null, new StreamInfo(MimeType: "image/jpeg")));
+        Assert.False(converter.Accepts(Stream.Null, new StreamInfo(Extension: ".csv")));
+    }
 
     private Task<DocumentConverterResult> ConvertAsync(string source, StreamInfo? streamInfo = null) =>
         _service.ConvertAsync(source, streamInfo, TestContext.Current.CancellationToken);

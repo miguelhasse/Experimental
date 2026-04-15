@@ -3,7 +3,7 @@
 A C#/.NET 10 port of Microsoft's [markitdown](https://github.com/microsoft/markitdown) Python library — a converter-driven pipeline that turns virtually any document or URL into clean Markdown.
 
 The solution ships as three focused projects: a portable core library, a Native AOT CLI (with a built-in MCP server mode), and an xUnit test suite.  
-**78/78 tests passing. Matches or exceeds the upstream Python implementation for every shared format.**
+**90/90 tests passing. Matches or exceeds the upstream Python implementation for every shared format.**
 
 ---
 
@@ -17,9 +17,10 @@ The solution ships as three focused projects: a portable core library, a Native 
 
 | Project | Description |
 |---|---|
-| [`MarkItDown.Core`](MarkItDown.Core/README.md) | Converter library — models, 15 converters, `MarkItDownService` |
+| [`MarkItDown.Core`](MarkItDown.Core/README.md) | Converter library — models, 19 converters, `MarkItDownService` |
+| [`MarkItDown.Azure`](MarkItDown.Azure/) | Optional plugin — `DocumentIntelligenceConverter` backed by Azure AI Document Intelligence |
 | [`MarkItDown.Cli`](MarkItDown.Cli/README.md) | Command-line tool + MCP server (`mcp` subcommand), Native AOT enabled |
-| [`MarkItDown.Tests`](MarkItDown.Tests/README.md) | xUnit integration tests — 78 tests across all formats |
+| [`MarkItDown.Tests`](MarkItDown.Tests/README.md) | xUnit integration tests — 90 tests across all formats |
 
 ---
 
@@ -29,19 +30,23 @@ The solution ships as three focused projects: a portable core library, a Native 
 |---|---|---|---|
 | Plain text, Markdown, JSON, XML | `PlainTextConverter` | BCL | Charset-aware; rejects known binary MIMEs |
 | HTML / XHTML | `HtmlConverter` | HtmlAgilityPack, ReverseMarkdown | Strips scripts/styles; converts body |
+| Bing SERP | `BingSerpConverter` | HtmlAgilityPack, ReverseMarkdown | Activates only for `bing.com/search?q=` URLs; extracts organic `b_algo` results; decodes redirect URLs |
 | CSV | `CsvConverter` | CsvHelper | Multi-encoding heuristic (UTF-8, Shift-JIS, GBK, Big5, EUC-KR, EUC-JP, Latin-1) |
 | DOCX | `DocxConverter` | DocumentFormat.OpenXml | Headings 1–6 (incl. custom style inheritance), bold/italic, tables, embedded image data URIs |
 | XLSX | `XlsxConverter` | DocumentFormat.OpenXml | Each sheet → `## Name` + GFM table; handles sparse cells and shared strings |
 | PPTX | `PptxConverter` | DocumentFormat.OpenXml | Slides with title, body, tables, charts, image alt-text, speaker notes |
-| PDF | `PdfConverter` | UglyToad.PdfPig | Layout-aware: bounding-box word sort → line groups → paragraph gap detection |
+| PDF | `PdfConverter` | UglyToad.PdfPig | Layout-aware: bounding-box word sort → line groups → paragraph gap detection; form/table column detection |
 | Images (EXIF/metadata) | `ImageConverter` | MetadataExtractor | Full EXIF/IPTC/XMP grouped by directory; no external binary needed |
+| Audio (WAV/MP3/MP4/M4A) | `AudioConverter` | MetadataExtractor | Metadata extraction (ID3, RIFF, QuickTime tags) grouped by directory |
 | ZIP (recursive) | `ZipConverter` | BCL `System.IO.Compression` | Recursively converts each entry; path traversal sanitised |
 | EPUB | `EpubConverter` | VersOne.Epub | Reading-order chapters with `## Chapter Title` headings from NCX/NAV navigation |
+| Jupyter Notebook | `IpynbConverter` | BCL `System.Text.Json` | Markdown cells passthrough; code cells → fenced ` ```python ` blocks; title from first `# ` heading |
+| Outlook MSG | `OutlookMsgConverter` | OpenMcdf | Reads OLE/CFB compound file; extracts From, To, Subject, plain-text body via MAPI stream paths |
 | MOBI / AZW | `MobiConverter` | *(built-in parser)* | PalmDB + PalmDoc decompression → HTML → Markdown; magic-byte detection |
 | CHM (Compiled HTML Help) | `ChmConverter` | *(built-in ITSF parser)* | ITSF/ITSP + LZX decompression → HTML → Markdown; TOC order from HHC |
 | RSS / Atom | `RssConverter` | System.ServiceModel.Syndication | Feed + item Markdown links, RFC 1123 dates, HTML-stripped summaries |
 | Wikipedia URLs | `WikipediaConverter` | HtmlAgilityPack, ReverseMarkdown | `mw-content-text` targeting, `mw-page-title-main` title, `# Title` prefix |
-| YouTube URLs | `YouTubeConverter` | HtmlAgilityPack | `og:title`, `og:description`, canonical URL |
+| YouTube URLs | `YouTubeConverter` | HtmlAgilityPack | `og:title`, `og:description`, canonical URL, view count, keywords, transcript via `captionTracks` |
 
 ---
 
@@ -263,6 +268,7 @@ The C# port targets feature parity with [microsoft/markitdown](https://github.co
 |---|---|---|
 | Plain text / JSON / XML | ✅ Full | C# supports broader MIME/extension matching |
 | HTML / XHTML | ✅ Full | Different libraries; equivalent output for LLM consumption |
+| Bing SERP | ✅ Full | `b_algo` result blocks; base64url redirect decoding; registered before generic HTML converter |
 | CSV | ✅ Exceeds | Round-trip fidelity heuristic; strict declared-charset validation — upstream uses `charset_normalizer` |
 | XLSX | ✅ Full | C# handles sparse cells correctly; upstream routes through pandas HTML |
 | DOCX | ✅ Exceeds | C# adds: custom heading style inheritance, inline bold/italic, image data URIs |
@@ -271,9 +277,13 @@ The C# port targets feature parity with [microsoft/markitdown](https://github.co
 | EPUB | ✅ Exceeds | C# emits `## Chapter Title` headings from NCX/NAV navigation; upstream does not |
 | RSS / Atom | ✅ Exceeds | C# emits Markdown links for feed and items, normalised RFC 1123 dates |
 | Images | ✅ Exceeds | C# supports more formats (GIF, BMP, TIFF, WebP), requires no external binary, and adds LLM captioning via `IChatClient` |
+| Audio (WAV/MP3/M4A/MP4) | ✅ Full | Metadata extraction matching Python; no transcription (Whisper is optional in Python too) |
+| Jupyter Notebook | ✅ Full | Markdown/code/raw cells; fenced ` ```python ` blocks; title from first `# ` heading |
+| Outlook MSG | ✅ Full | OLE/CFB compound-file parsing; From, To, Subject, plain-text body via MAPI stream paths |
 | ZIP | ✅ Full | C# adds path-traversal sanitisation |
-| YouTube | ⚠️ Near-full | C# extracts title + description; upstream also extracts transcripts via `youtube_transcript_api` |
+| YouTube | ⚠️ Near-full | C# extracts title + description + keywords + view count; upstream also extracts transcripts via `youtube_transcript_api` |
 | Wikipedia | ✅ Full | Exact match — `mw-content-text`, `mw-page-title-main`, `# Title\n\n` heading prefix |
+| Azure Document Intelligence | ✅ Plugin | Optional `MarkItDown.Azure` package — see [Azure plugin](#azure-document-intelligence-plugin) |
 | MOBI / AZW | 🆕 C# only | No upstream equivalent |
 | CHM | 🆕 C# only | No upstream equivalent |
 
@@ -282,15 +292,47 @@ The C# port targets feature parity with [microsoft/markitdown](https://github.co
 | Feature | Reason |
 |---|---|
 | XLS (legacy Excel) | Old binary format; `xlrd` has no pure-.NET equivalent |
-| Jupyter Notebook (`.ipynb`) | Niche; JSON cells with embedded output |
-| Outlook MSG | MAPI/CFBF compound binary — complex, rarely needed |
-| Audio transcription | Requires Whisper ML model |
-| Bing SERP | Specific HTML selectors for Bing search result pages |
-| Azure Document Intelligence | Cloud API, premium feature — out of scope |
+| Audio transcription | Requires Whisper ML model; Python optional dep too |
 | YouTube transcript extraction | Requires `youtube_transcript_api`; timedtext API not yet ported |
 | PPTX data URI images | `keep_data_uris=True` option — not yet ported |
 
-### Performance characteristics
+### Azure Document Intelligence plugin
+
+The optional `MarkItDown.Azure` package wraps the [Azure AI Document Intelligence](https://learn.microsoft.com/azure/ai-services/document-intelligence/) API to extract rich markdown from any document type (PDFs, scanned images, Office files) using the `prebuilt-layout` model.
+
+**Install:**
+
+```xml
+<PackageReference Include="MarkItDown.Azure" Version="*" />
+```
+
+**Wire up (key-based):**
+
+```csharp
+using MarkItDown.Azure;
+using Azure;
+
+var service = new MarkItDownService();
+service.RegisterConverter(new DocumentIntelligenceConverter(
+    new Uri("https://<your-resource>.cognitiveservices.azure.com/"),
+    new AzureKeyCredential("<your-key>")));
+```
+
+**Wire up (managed identity / DefaultAzureCredential):**
+
+```csharp
+using Azure.Identity;
+
+service.RegisterConverter(new DocumentIntelligenceConverter(
+    new Uri("https://<your-resource>.cognitiveservices.azure.com/"),
+    new DefaultAzureCredential()));
+```
+
+The converter is **not registered by default** — it requires an Azure subscription and an endpoint. Once registered it accepts any document type the service supports (PDF, JPEG, PNG, TIFF, BMP, DOCX, XLSX, PPTX, HTML). It runs at `PrioritySpecific` (0.0) so it wins over the generic built-in converters.
+
+> **Note:** `MarkItDown.Azure` is not AOT-compatible (Azure SDK uses reflection internally). Reference it only in trimming-disabled builds.
+
+
 
 | Characteristic | Python upstream | C# port |
 |---|---|---|

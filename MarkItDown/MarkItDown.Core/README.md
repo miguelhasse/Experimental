@@ -1,6 +1,6 @@
 # MarkItDown.Core
 
-The portable conversion library at the heart of the solution. It exposes `MarkItDownService`, 15 built-in document converters, and all the models needed to add custom converters.
+The portable conversion library at the heart of the solution. It exposes `MarkItDownService`, 19 built-in document converters, and all the models needed to add custom converters.
 
 **Target:** `net10.0` · **Nullable:** enabled · **Trimming / AOT:** `IsTrimmable=true`, `IsAotCompatible=true`
 
@@ -14,7 +14,8 @@ The portable conversion library at the heart of the solution. It exposes `MarkIt
 | `CsvHelper` | 33.1.0 | CSV parsing |
 | `HtmlAgilityPack` | 1.12.4 | HTML DOM parsing |
 | `ReverseMarkdown` | 5.2.0 | HTML → Markdown conversion |
-| `MetadataExtractor` | 2.9.2 | Image EXIF / metadata |
+| `MetadataExtractor` | 2.9.2 | Image/audio EXIF / metadata |
+| `OpenMcdf` | 3.1.2 | OLE/CFB compound file parsing (Outlook MSG) |
 | `UglyToad.PdfPig` | 1.7.0-custom-5 | PDF text extraction |
 | `VersOne.Epub` | 3.3.6 | EPUB parsing |
 | `System.ServiceModel.Syndication` | 10.0.5 | RSS / Atom feeds |
@@ -178,12 +179,16 @@ Both derive from `FileConversionException`. `UnsupportedFormatException` is seal
 | Converter | Accepts | Output |
 |---|---|---|
 | `WikipediaConverter` | URLs matching `^https?://[a-zA-Z]{2,3}\.wikipedia\.org/` | Strips navigation chrome via `mw-content-text`; prepends `# Title` from `mw-page-title-main`; falls back to generic HTML if content div absent |
-| `YouTubeConverter` | `youtube.com` / `youtu.be` URLs | Extracts `og:title`, `og:description`, canonical URL; format: `# Title\n\nURL\n\ndescription` |
+| `YouTubeConverter` | `youtube.com` / `youtu.be` URLs | Extracts `og:title`, `og:description`, canonical URL, view count, keywords; format: `# Title\n\nURL\n\ndescription` |
+| `BingSerpConverter` | `https://www.bing.com/search?` URLs | Targets `b_algo` result blocks; strips `algoSlug_icon`; decodes base64url redirect URLs; converts each result to Markdown via `HtmlMarkdownConverter` |
 | `DocxConverter` | `.docx`, OOXML MIME | Headings 1–6 (including custom styles resolved via `basedOn` inheritance chain), paragraphs with inline **bold** and _italic_, bullet lists, tables, embedded images as `data:` URIs |
 | `XlsxConverter` | `.xlsx`, OOXML MIME | Each sheet → `## SheetName\n\n` + GFM pipe table; handles sparse cells via column-letter resolution, shared string table, and boolean cells |
 | `PptxConverter` | `.pptx`, OOXML MIME | Each slide → `<!-- Slide number: N -->` + `# Title` + body text + GFM tables + `### Chart: Name` + chart data tables + `### Notes:` block; shapes sorted by `(top, left)` |
-| `PdfConverter` | `.pdf`, `application/pdf` | Page-by-page: word bounding boxes sorted by Y↓ then X, grouped into lines (tolerance = `avgWordHeight × 0.5`), separated into paragraphs (gap > `avgLineHeight × 1.5`); each page prefixed `## Page N` |
+| `PdfConverter` | `.pdf`, `application/pdf` | Page-by-page: word bounding boxes sorted by Y↓ then X, grouped into lines (tolerance = `avgWordHeight × 0.5`), separated into paragraphs (gap > `avgLineHeight × 1.5`); tabular content detection via column gap/Y-cluster analysis; each page prefixed `## Page N` |
 | `ImageConverter` | Common image extensions + `image/*` MIME | Full EXIF / IPTC / XMP metadata dump grouped by directory as Markdown lists; no external binary required |
+| `AudioConverter` | `.wav`, `.mp3`, `.m4a`, `.mp4` + audio/video MIMEs | Audio/video metadata (ID3, RIFF, QuickTime tags) via MetadataExtractor, grouped by directory; no transcription (Whisper is optional in Python too) |
+| `IpynbConverter` | `.ipynb`, `application/json` with `nbformat` peek | Markdown cells passthrough; code cells → fenced ` ```python ` blocks; raw cells → ` ``` `; title from first `# ` heading or `metadata.title` |
+| `OutlookMsgConverter` | `.msg`, magic bytes `D0 CF 11 E0 A1 B1 1A E1` | Reads OLE/CFB compound file (OpenMcdf); MAPI stream paths for Subject, From, To, plain-text body; UTF-16LE decoding |
 | `EpubConverter` | `.epub`, `application/epub+zip` | Reads spine items in order; looks up each chapter in NCX/NAV navigation map to emit `## Chapter Title`; converts chapter HTML to Markdown; metadata block at top |
 | `MobiConverter` | `.mobi`, `.azw`, `application/x-mobipocket-ebook`, magic bytes | PalmDB container → PalmDoc LZ77 decompression → HTML → `HtmlMarkdownConverter`; title from MOBI FullName or PalmDB record name |
 | `ChmConverter` | `.chm`, `application/vnd.ms-htmlhelp`, ITSF magic | ITSF/ITSP binary container + LZX sliding-window decompression → HTML pages → `HtmlMarkdownConverter`; title from `#SYSTEM`; page order from HHC TOC |
@@ -381,3 +386,41 @@ builder.Services.AddSingleton<MarkItDownService>(sp =>
 ```
 
 `MarkItDownService` is thread-safe after construction (converters are registered in the constructor). Register it as a **singleton**.
+
+---
+
+## Azure Document Intelligence plugin (`MarkItDown.Azure`)
+
+The optional `MarkItDown.Azure` package adds `DocumentIntelligenceConverter`, which uses the [Azure AI Document Intelligence](https://learn.microsoft.com/azure/ai-services/document-intelligence/) `prebuilt-layout` model to extract richly-structured Markdown from any document type (PDFs, scanned images, Office files).
+
+> **Note:** `MarkItDown.Azure` targets `net10.0` but is **not** AOT-compatible — the Azure SDK uses reflection internally. Reference it only in trimming-disabled builds.
+
+### Install
+
+```xml
+<PackageReference Include="MarkItDown.Azure" Version="*" />
+```
+
+### Register the converter
+
+The converter is **not registered by default** (it requires an Azure subscription). Register it manually after creating `MarkItDownService`:
+
+```csharp
+using MarkItDown.Azure;
+using Azure;
+using Azure.Identity;
+
+var service = new MarkItDownService();
+
+// Key-based auth
+service.RegisterConverter(new DocumentIntelligenceConverter(
+    new Uri("https://<resource>.cognitiveservices.azure.com/"),
+    new AzureKeyCredential("<key>")));
+
+// Managed identity / DefaultAzureCredential
+service.RegisterConverter(new DocumentIntelligenceConverter(
+    new Uri("https://<resource>.cognitiveservices.azure.com/"),
+    new DefaultAzureCredential()));
+```
+
+Once registered, `DocumentIntelligenceConverter` runs at `PrioritySpecific` (0.0) and accepts any document type supported by the service: PDF, JPEG, PNG, TIFF, BMP, DOCX, XLSX, PPTX, HTML.
