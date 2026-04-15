@@ -5,7 +5,9 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <PublishAot>true</PublishAot>
+    <!-- AOT is enabled by default for smallest self-contained binaries.
+         Pass -p:EnablePlugins=true to disable AOT and enable dynamic plugin loading. -->
+    <PublishAot Condition="'$(EnablePlugins)' != 'true'">true</PublishAot>
     <Version>0.1.0</Version>
   </PropertyGroup>
 

@@ -2,7 +2,7 @@
 
 A command-line tool that converts any supported document or URL to Markdown and writes the result to stdout or a file. Publishes as a self-contained **Native AOT** executable with no .NET runtime dependency.
 
-**Target:** `net10.0` · **SDK:** `Microsoft.NET.Sdk.Web` · **Native AOT:** `PublishAot=true`
+**Target:** `net10.0` · **SDK:** `Microsoft.NET.Sdk.Web` · **Native AOT:** `PublishAot=true` (default) / JIT with `-p:EnablePlugins=true`
 
 ---
 
@@ -15,8 +15,11 @@ dotnet run --project MarkItDown.Cli -- <arguments>
 # Build (JIT)
 dotnet build MarkItDown.Cli
 
-# Publish as Native AOT (~42 MB self-contained exe)
+# Publish as Native AOT (~65 MB self-contained exe)
 dotnet publish MarkItDown.Cli -c Release
+
+# Publish as JIT with plugin support (~35 MB self-contained exe)
+dotnet publish MarkItDown.Cli -c Release -p:EnablePlugins=true
 ```
 
 ---
@@ -48,6 +51,8 @@ When `<input>` is omitted the tool reads from **stdin**. Use `--input-name` or `
 | `--output <file>` | `-o` | Write Markdown to `<file>` instead of stdout |
 | `--input-name <name>` | | Hint filename (used to infer MIME type / extension) |
 | `--mime-type <type>` | | Override MIME type (e.g. `application/pdf`) |
+| `--enable-plugins` | | Load additional converters from the plugins directory |
+| `--plugins-dir <path>` | | Plugins directory path (default: `{exe}/plugins/`; overrides `MARKITDOWN_PLUGINS_DIR`) |
 | `--version` | | Print version and exit |
 | `--help` | `-h`, `-?` | Print usage and exit |
 
@@ -61,7 +66,16 @@ Starts a Model Context Protocol server exposing a single tool: **`convert_to_mar
 |---|---|---|
 | `--http` | — | Use HTTP/SSE transport instead of stdio |
 | `--port <port>` | `3001` | TCP port for HTTP transport |
+| `--enable-plugins` | — | Load additional converters from the plugins directory |
+| `--plugins-dir <path>` | `{exe}/plugins/` | Plugins directory; overrides `MARKITDOWN_PLUGINS_DIR` env var |
 | `--help` | | Print help and exit |
+
+Plugins can also be enabled without modifying the command line via environment variables (useful for MCP host configs):
+
+| Environment variable | Purpose |
+|---|---|
+| `MARKITDOWN_ENABLE_PLUGINS=true` | Equivalent to `--enable-plugins` |
+| `MARKITDOWN_PLUGINS_DIR=<path>` | Equivalent to `--plugins-dir` |
 
 ---
 
@@ -92,6 +106,25 @@ Get-Content data.csv | dotnet run --project MarkItDown.Cli -- --mime-type text/c
 
 # Binary data through stdin requires --mime-type
 [System.IO.File]::ReadAllBytes("doc.docx") | dotnet run --project MarkItDown.Cli -- --mime-type application/vnd.openxmlformats-officedocument.wordprocessingml.document
+```
+
+### Load plugins
+
+Plugins are DLLs placed in the plugins directory. Pass `--enable-plugins` to activate them:
+
+```powershell
+# Load from default {exe}/plugins/ directory
+dotnet run --project MarkItDown.Cli -- report.pdf --enable-plugins
+
+# Load from a custom directory
+dotnet run --project MarkItDown.Cli -- report.pdf --enable-plugins --plugins-dir ~/.markitdown/plugins
+```
+
+Plugin loading requires a JIT (non-AOT) binary. Publish with `-p:EnablePlugins=true` to get a plugin-capable build:
+
+```powershell
+dotnet publish MarkItDown.Cli -c Release -p:EnablePlugins=true
+.\bin\Release\net10.0\win-x64\publish\MarkItDown.Cli.exe report.pdf --enable-plugins
 ```
 
 ### Use the AOT binary directly
@@ -164,6 +197,23 @@ Converts a document or URL to Markdown.
 }
 ```
 
+With plugins enabled via environment variable (requires a JIT/plugin-capable build):
+
+```json
+{
+  "mcpServers": {
+    "markitdown": {
+      "command": "C:\\path\\to\\MarkItDown.Cli.exe",
+      "args": ["mcp"],
+      "env": {
+        "MARKITDOWN_ENABLE_PLUGINS": "true",
+        "MARKITDOWN_PLUGINS_DIR": "C:\\Users\\me\\.markitdown\\plugins"
+      }
+    }
+  }
+}
+```
+
 Or with `dotnet run` (during development):
 
 ```json
@@ -225,3 +275,5 @@ Or with `dotnet run` (during development):
 - The tool creates an `HttpClient` and `MarkItDownService` for the duration of the run, then disposes them.
 - For the `mcp` subcommand, `MarkItDownService` is registered as a **singleton** in the DI container; one `HttpClient` is shared for the lifetime of the process.
 - MCP tool methods are registered with `WithTools<MarkItDownTools>()` — this avoids `IL2026` reflection warnings and is required for Native AOT compatibility.
+- Plugin loading uses `AssemblyLoadContext` and is not compatible with Native AOT. Pass `-p:EnablePlugins=true` to `dotnet publish` to produce a JIT binary that supports plugins.
+- `MARKITDOWN_ENABLE_PLUGINS` and `MARKITDOWN_PLUGINS_DIR` environment variables apply only to the `mcp` subcommand when running headlessly (e.g. from a Claude Desktop config). The `convert` command requires the explicit CLI flags.

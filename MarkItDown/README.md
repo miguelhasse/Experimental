@@ -17,7 +17,7 @@ The solution ships as three focused projects: a portable core library, a Native 
 
 | Project | Description |
 |---|---|
-| [`MarkItDown.Core`](MarkItDown.Core/README.md) | Converter library — models, 19 converters, `MarkItDownService` |
+| [`MarkItDown.Core`](MarkItDown.Core/README.md) | Converter library — models, 19 converters, `MarkItDownService`, `IMarkItDownPlugin` |
 | [`MarkItDown.Azure`](MarkItDown.Azure/) | Optional plugin — `DocumentIntelligenceConverter` backed by Azure AI Document Intelligence |
 | [`MarkItDown.Cli`](MarkItDown.Cli/README.md) | Command-line tool + MCP server (`mcp` subcommand), Native AOT enabled |
 | [`MarkItDown.Tests`](MarkItDown.Tests/README.md) | xUnit integration tests — 90 tests across all formats |
@@ -72,14 +72,19 @@ dotnet test MarkItDown.slnx
 ## Publish as Native AOT
 
 ```powershell
+# Standard: AOT binary (no plugin support)
 dotnet publish MarkItDown.Cli -c Release
+
+# Plugin-capable: JIT binary (dynamic assembly loading enabled)
+dotnet publish MarkItDown.Cli -c Release -p:EnablePlugins=true
 ```
 
-Produces a self-contained native executable with no .NET runtime dependency.
+AOT produces a self-contained native executable with no .NET runtime dependency. The plugin-capable build is a self-contained JIT binary and supports runtime assembly loading.
 
-| Binary | Approx. size |
-|---|---|
-| `MarkItDown.Cli.exe` | ~65 MB |
+| Binary | Mode | Approx. size |
+|---|---|---|
+| `MarkItDown.Cli.exe` | AOT | ~65 MB |
+| `MarkItDown.Cli.exe` | JIT (plugins enabled) | ~35 MB |
 
 ---
 
@@ -100,6 +105,12 @@ dotnet run --project MarkItDown.Cli -- https://en.wikipedia.org/wiki/Markdown
 
 # Use the AOT binary directly
 .\MarkItDown.Cli.exe report.xlsx -o report.md
+
+# Load plugins from the default plugins/ directory
+.\MarkItDown.Cli.exe report.pdf --enable-plugins
+
+# Load plugins from a custom directory
+.\MarkItDown.Cli.exe report.pdf --enable-plugins --plugins-dir C:\MarkItDown\plugins
 ```
 
 ## Quick start — MCP server
@@ -110,6 +121,26 @@ dotnet run --project MarkItDown.Cli -- mcp
 
 # HTTP transport
 dotnet run --project MarkItDown.Cli -- mcp --http --port 3001
+
+# With plugins enabled via CLI flag
+dotnet run --project MarkItDown.Cli -- mcp --enable-plugins
+```
+
+Plugins can also be enabled without changing CLI arguments via the `MARKITDOWN_ENABLE_PLUGINS=true` environment variable — useful for MCP host configurations (Claude Desktop, VS Code, etc.):
+
+```json
+{
+  "mcpServers": {
+    "markitdown": {
+      "command": "C:\\path\\to\\MarkItDown.Cli.exe",
+      "args": ["mcp"],
+      "env": {
+        "MARKITDOWN_ENABLE_PLUGINS": "true",
+        "MARKITDOWN_PLUGINS_DIR": "C:\\Users\\me\\.markitdown\\plugins"
+      }
+    }
+  }
+}
 ```
 
 The server exposes one tool: **`convert_to_markdown`** — accepts a `file:`, `data:`, `http:`, or `https:` URI and returns Markdown text.
@@ -340,7 +371,74 @@ The converter is **not registered by default** — it requires an Azure subscrip
 | Regex allocation | `re.compile()` at import time | `[GeneratedRegex]` — zero allocation per call |
 | Binary dependencies | exiftool (optional) | None — all parsers are pure .NET |
 | Trimming / AOT | N/A | `IsTrimmable=true`, `IsAotCompatible=true` on Core |
-| Plugin system | `#markitdown-plugin` via PyPI | Not implemented |
+| Plugin system | `#markitdown-plugin` entry point via PyPI | `IMarkItDownPlugin` interface; `--enable-plugins` CLI flag; `MARKITDOWN_ENABLE_PLUGINS` env var |
+
+---
+
+## Plugin system
+
+The C# port supports third-party converter plugins that are discovered at runtime from a plugins directory. This mirrors the Python upstream's `#markitdown-plugin` entry point mechanism.
+
+### How plugins are loaded
+
+When `--enable-plugins` is passed (or `MARKITDOWN_ENABLE_PLUGINS=true` is set), the CLI scans for `*.dll` files in the plugins directory, finds all classes implementing `IMarkItDownPlugin`, and calls `RegisterConverters(service)` on each one. Failures are logged as warnings and skipped — consistent with Python's warn-and-continue behaviour.
+
+**Plugins directory resolution order:**
+
+| Source | Value |
+|---|---|
+| CLI flag | `--plugins-dir <path>` |
+| Environment variable | `MARKITDOWN_PLUGINS_DIR` |
+| Default | `{exe directory}/plugins/` |
+
+### Writing a plugin
+
+Reference `MarkItDown.Core` with `<Private>false</Private>` so the host's type identity is used:
+
+```xml
+<!-- MyPlugin.csproj -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\MarkItDown.Core\MarkItDown.Core.csproj">
+      <Private>false</Private>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </ProjectReference>
+  </ItemGroup>
+</Project>
+```
+
+```csharp
+using MarkItDown.Core;
+
+public sealed class MyPlugin : IMarkItDownPlugin
+{
+    public string Name => "My Format Plugin v1.0";
+
+    public void RegisterConverters(MarkItDownService service)
+        => service.RegisterConverter(new MyFormatConverter(), MarkItDownService.PrioritySpecific);
+}
+```
+
+Deploy by copying the plugin's build output into the plugins directory:
+
+```powershell
+dotnet build MyPlugin -c Release
+Copy-Item MyPlugin\bin\Release\net10.0\* ~/.markitdown/plugins\ -Recurse
+```
+
+### AOT compatibility
+
+Plugin loading requires dynamic assembly loading (JIT runtime). The default `dotnet publish` produces an AOT binary that does not support plugins. To publish a plugin-capable JIT binary:
+
+```powershell
+dotnet publish MarkItDown.Cli -c Release -p:EnablePlugins=true
+```
+
+AOT builds that receive `--enable-plugins` emit a warning and skip plugin loading rather than crashing.
 
 ---
 
@@ -352,6 +450,6 @@ The converter is **not registered by default** — it requires an Azure subscrip
 
 **Priority** — lower number = checked first. Built-in specific converters use `0.0`, generic fallbacks use `10.0`. Custom converters can use any `double`.
 
-**Native AOT** — the Core library is declared `IsTrimmable` and `IsAotCompatible`. The CLI and MCP server publish with `PublishAot=true`. Third-party libraries (PdfPig, ReverseMarkdown, CsvHelper, Syndication) emit `IL2104` trim warnings from within their own assemblies; these do not affect runtime correctness.
+**Native AOT** — the Core library is declared `IsTrimmable` and `IsAotCompatible`. The CLI publishes with `PublishAot=true` by default (pass `-p:EnablePlugins=true` to produce a JIT binary with dynamic plugin loading instead). Third-party libraries (PdfPig, ReverseMarkdown, CsvHelper, Syndication) emit `IL2104` trim warnings from within their own assemblies; these do not affect runtime correctness.
 
 **HttpClient lifetime** — `MarkItDownService` implements `IDisposable`. A caller-supplied `HttpClient` is never disposed by the service. An internally-created one is disposed when the service is disposed.

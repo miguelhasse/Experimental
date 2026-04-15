@@ -161,7 +161,53 @@ string?           LlmPrompt   { get; }  // custom caption prompt, or null for de
 
 ---
 
-### Exceptions
+### `IMarkItDownPlugin`
+
+Implement this interface in a separate "plugin" assembly to have the CLI automatically discover and load your converters at startup.
+
+```csharp
+public interface IMarkItDownPlugin
+{
+    string Name { get; }   // shown in diagnostic output when the plugin loads
+    void RegisterConverters(MarkItDownService service);
+}
+```
+
+**Minimal plugin project:**
+
+```xml
+<!-- MyPlugin.csproj -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- Copies NuGet dependencies to output so the host can resolve them -->
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Do NOT copy MarkItDown.Core.dll — the host already has it -->
+    <ProjectReference Include="..\..\MarkItDown.Core\MarkItDown.Core.csproj">
+      <Private>false</Private>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </ProjectReference>
+  </ItemGroup>
+</Project>
+```
+
+```csharp
+using MarkItDown.Core;
+
+public sealed class MyPlugin : IMarkItDownPlugin
+{
+    public string Name => "My Format Plugin v1.0";
+
+    public void RegisterConverters(MarkItDownService service)
+        => service.RegisterConverter(new MyFormatConverter(), MarkItDownService.PrioritySpecific);
+}
+```
+
+Drop the plugin's build output into the CLI's plugins directory (default: `{exe}/plugins/`) and start the CLI with `--enable-plugins`. See [`MarkItDown.Cli`](../MarkItDown.Cli/README.md) for deployment and MCP configuration details.
+
+---
 
 | Type | When thrown |
 |---|---|
