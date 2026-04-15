@@ -943,6 +943,62 @@ public sealed class ConverterTests : IDisposable
             $"Expected substantial markdown but got only {result.Markdown.Length} chars.");
     }
 
+    // ── BingSerpConverter ─────────────────────────────────────────────────────
+
+    [Fact]
+    public void BingSerpConverter_RejectsNonBingUrl()
+    {
+        var converter = new BingSerpConverter();
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes("<html></html>"));
+        Assert.False(converter.Accepts(stream,
+            new StreamInfo(MimeType: "text/html", Extension: ".html", Url: "https://www.example.com")));
+    }
+
+    [Fact]
+    public void BingSerpConverter_AcceptsBingSearchUrl()
+    {
+        var converter = new BingSerpConverter();
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes("<html></html>"));
+        Assert.True(converter.Accepts(stream,
+            new StreamInfo(MimeType: "text/html", Extension: ".html", Url: "https://www.bing.com/search?q=hello")));
+    }
+
+    [Fact]
+    public void BingSerpConverter_RejectsBingUrlWithoutHtmlMime()
+    {
+        var converter = new BingSerpConverter();
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes("data"));
+        Assert.False(converter.Accepts(stream,
+            new StreamInfo(MimeType: "application/octet-stream", Url: "https://www.bing.com/search?q=hello")));
+    }
+
+    [Fact]
+    public async Task BingSerpConverter_AcceptsBingUrl_ProducesSearchHeader()
+    {
+        const string html = """
+            <html>
+            <head><title>hello - Bing</title></head>
+            <body>
+            <ol>
+                <li class="b_algo">
+                    <h2><a href="https://example.com">Example Site</a></h2>
+                    <p>A short description of the result.</p>
+                </li>
+            </ol>
+            </body>
+            </html>
+            """;
+
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(html));
+        var result = await ConvertStreamAsync(
+            stream,
+            new StreamInfo(MimeType: "text/html", Extension: ".html", Url: "https://www.bing.com/search?q=hello"));
+
+        Assert.Contains("A Bing search for 'hello'", result.Markdown);
+        Assert.Contains("Example Site", result.Markdown);
+        Assert.Equal("hello - Bing", result.Title);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static MemoryStream CreateZipStream(Action<ZipArchive> configure)
@@ -960,6 +1016,111 @@ public sealed class ConverterTests : IDisposable
         using var writer = new StreamWriter(entry.Open());
         writer.Write(content);
     }
+
+    [Fact]
+    public async Task AudioConverter_AcceptsWavExtension()
+    {
+        // Minimal valid WAV: RIFF header for 0-sample file
+        var wavBytes = new byte[]
+        {
+            0x52,0x49,0x46,0x46, // "RIFF"
+            0x24,0x00,0x00,0x00, // file size - 8 = 36
+            0x57,0x41,0x56,0x45, // "WAVE"
+            0x66,0x6D,0x74,0x20, // "fmt "
+            0x10,0x00,0x00,0x00, // chunk size = 16
+            0x01,0x00,           // PCM format
+            0x01,0x00,           // 1 channel
+            0x44,0xAC,0x00,0x00, // 44100 Hz
+            0x88,0x58,0x01,0x00, // byte rate
+            0x02,0x00,           // block align
+            0x10,0x00,           // bits per sample = 16
+            0x64,0x61,0x74,0x61, // "data"
+            0x00,0x00,0x00,0x00  // data chunk size = 0
+        };
+
+        await using var stream = new MemoryStream(wavBytes);
+
+        var result = await ConvertStreamAsync(
+            stream,
+            new StreamInfo(FileName: "sample.wav", Extension: ".wav", MimeType: "audio/x-wav"));
+
+        Assert.NotNull(result);
+        Assert.NotNull(result.Markdown);
+    }
+
+    // ── Jupyter Notebook ──────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task IpynbConversion_ProducesMarkdown()
+    {
+        const string notebook = """
+            {
+              "nbformat": 4,
+              "nbformat_minor": 5,
+              "metadata": {},
+              "cells": [
+                {
+                  "cell_type": "markdown",
+                  "source": ["# Test Title\n", "\n", "Some intro text."]
+                },
+                {
+                  "cell_type": "code",
+                  "source": ["print('hello')"]
+                }
+              ]
+            }
+            """;
+
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(notebook));
+
+        var result = await ConvertStreamAsync(
+            stream,
+            new StreamInfo(FileName: "notebook.ipynb", Extension: ".ipynb"));
+
+        Assert.Contains("# Test Title", result.Markdown);
+        Assert.Contains("print('hello')", result.Markdown);
+        Assert.Equal("Test Title", result.Title);
+    }
+    // ── OutlookMsgConverter ───────────────────────────────────────────────────
+
+    [Fact]
+    public void OutlookMsgConverter_AcceptsMsgExtension()
+    {
+        var converter = new OutlookMsgConverter();
+        using var stream = new MemoryStream();
+        Assert.True(converter.Accepts(stream, new StreamInfo(Extension: ".msg")));
+    }
+
+    [Fact]
+    public void OutlookMsgConverter_AcceptsOutlookMimeType()
+    {
+        var converter = new OutlookMsgConverter();
+        using var stream = new MemoryStream();
+        Assert.True(converter.Accepts(stream,
+            new StreamInfo(MimeType: "application/vnd.ms-outlook")));
+    }
+
+    [Fact]
+    public void OutlookMsgConverter_AcceptsOleSignatureBytes()
+    {
+        var converter = new OutlookMsgConverter();
+        byte[] oleSignature = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, 0x00, 0x00];
+        using var stream = new MemoryStream(oleSignature);
+        Assert.True(converter.Accepts(stream, new StreamInfo()));
+    }
+
+    [Fact]
+    public void OutlookMsgConverter_RejectsNonMsgFile()
+    {
+        var converter = new OutlookMsgConverter();
+        using var stream = new MemoryStream([0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]);
+        Assert.False(converter.Accepts(stream, new StreamInfo()));
+    }
+
+    [Fact]
+    public void OutlookMsgConverter_IsRegisteredInService()
+    {
+        Assert.Contains(_service.Converters,
+            r => r.Converter is OutlookMsgConverter);
+    }
 }
-
-

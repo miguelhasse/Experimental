@@ -188,9 +188,13 @@ public sealed class MarkItDownService : IDisposable
         RegisterConverter(new EpubConverter(), PrioritySpecific);
         RegisterConverter(new MobiConverter(), PrioritySpecific);
         RegisterConverter(new ChmConverter(), PrioritySpecific);
+        RegisterConverter(new OutlookMsgConverter(), PrioritySpecific);
+        RegisterConverter(new AudioConverter(), PrioritySpecific);
+        RegisterConverter(new IpynbConverter(), PrioritySpecific);
         RegisterConverter(new ZipConverter(), PriorityGeneric);
         RegisterConverter(new RssConverter(), PriorityGeneric);
         RegisterConverter(new CsvConverter(), PriorityGeneric);
+        RegisterConverter(new BingSerpConverter(), PrioritySpecific);
         RegisterConverter(new HtmlConverter(), PriorityGeneric);
         RegisterConverter(new PlainTextConverter(), PriorityGeneric);
     }
