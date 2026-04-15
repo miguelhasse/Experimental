@@ -8,7 +8,7 @@ namespace MarkItDown.Core.Converters;
 
 public sealed partial class BingSerpConverter : DocumentConverter
 {
-    [GeneratedRegex(@"^https://www\.bing\.com/search\?")]
+    [GeneratedRegex(@"^https://www\.bing\.com/search\?q=")]
     private static partial Regex BingSearchUrlRegex();
 
     public override bool Accepts(Stream stream, StreamInfo streamInfo)

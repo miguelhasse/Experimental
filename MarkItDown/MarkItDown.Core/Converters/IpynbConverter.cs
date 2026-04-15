@@ -34,18 +34,6 @@ public sealed partial class IpynbConverter : DocumentConverter
 
         string? title = null;
 
-        // Try notebook-level metadata.title first
-        if (root.TryGetProperty("metadata", out var metadata) &&
-            metadata.TryGetProperty("title", out var metaTitle) &&
-            metaTitle.ValueKind == JsonValueKind.String)
-        {
-            var t = metaTitle.GetString();
-            if (!string.IsNullOrWhiteSpace(t))
-            {
-                title = t;
-            }
-        }
-
         var sections = new List<string>();
 
         if (root.TryGetProperty("cells", out var cells) && cells.ValueKind == JsonValueKind.Array)
@@ -89,6 +77,19 @@ public sealed partial class IpynbConverter : DocumentConverter
                         sections.Add($"```\n{source}\n```");
                         break;
                 }
+            }
+        }
+
+        // Fall back to notebook-level metadata.title if no heading was found in cells
+        if (title is null &&
+            root.TryGetProperty("metadata", out var metadata) &&
+            metadata.TryGetProperty("title", out var metaTitle) &&
+            metaTitle.ValueKind == JsonValueKind.String)
+        {
+            var t = metaTitle.GetString();
+            if (!string.IsNullOrWhiteSpace(t))
+            {
+                title = t;
             }
         }
 

@@ -99,7 +99,11 @@ public sealed class RssConverter : DocumentConverter
                 lines.Add($"[{itemTitle}]({link})");
             }
 
-            if (item.PublishDate != DateTimeOffset.MinValue)
+            if (item.LastUpdatedTime != DateTimeOffset.MinValue)
+            {
+                lines.Add($"Updated on: {item.LastUpdatedTime:R}");
+            }
+            else if (item.PublishDate != DateTimeOffset.MinValue)
             {
                 lines.Add($"Published on: {item.PublishDate:R}");
             }

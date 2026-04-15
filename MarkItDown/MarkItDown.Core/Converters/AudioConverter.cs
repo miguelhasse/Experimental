@@ -44,24 +44,16 @@ public sealed class AudioConverter : DocumentConverter
 
         foreach (var directory in metadata)
         {
-            var tagLines = new List<string>();
             foreach (var tag in directory.Tags)
             {
                 if (string.IsNullOrWhiteSpace(tag.Description))
                     continue;
-                tagLines.Add($"- {tag.Name}: {tag.Description}");
+                lines.Add($"{tag.Name}: {tag.Description}");
             }
-
-            if (tagLines.Count == 0)
-                continue;
-
-            lines.Add($"## {directory.Name}");
-            lines.AddRange(tagLines);
-            lines.Add(string.Empty);
         }
 
         var markdown = lines.Count > 0
-            ? string.Join(Environment.NewLine, lines).Trim()
+            ? string.Join("\n", lines)
             : "_No metadata found._";
 
         return Task.FromResult(new DocumentConverterResult(markdown));
