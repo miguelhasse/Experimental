@@ -1,4 +1,7 @@
 using MarkItDown.Core.Models;
+using MarkItDown.Core.Utilities;
+using Microsoft.Extensions.AI;
+using System.Text;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Content;
 
@@ -18,7 +21,7 @@ public sealed class PdfConverter : DocumentConverter
             || string.Equals(streamInfo.MimeType, "application/pdf", StringComparison.OrdinalIgnoreCase);
     }
 
-    public override Task<DocumentConverterResult> ConvertAsync(
+    public override async Task<DocumentConverterResult> ConvertAsync(
         Stream stream,
         StreamInfo streamInfo,
         MarkItDownConversionContext context,
@@ -26,16 +29,81 @@ public sealed class PdfConverter : DocumentConverter
     {
         using var document = PdfDocument.Open(stream);
         var nl = Environment.NewLine;
-        var sections = document.GetPages()
-            .Select(page =>
-            {
-                var pageText = ReconstructPageText(page.GetWords());
-                return $"## Page {page.Number}{nl}{nl}{pageText}";
-            })
-            .ToArray();
+        var sections = new List<string>();
 
-        return Task.FromResult(new DocumentConverterResult(string.Join(nl + nl, sections)));
+        foreach (var page in document.GetPages())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var pageText = ReconstructPageText(page.GetWords());
+            var imageCaptions = await ExtractImageCaptionsAsync(page, context, cancellationToken);
+
+            var sb = new StringBuilder();
+            sb.Append($"## Page {page.Number}{nl}{nl}");
+            sb.Append(pageText);
+
+            if (imageCaptions.Count > 0)
+            {
+                sb.Append(nl);
+                foreach (var caption in imageCaptions)
+                {
+                    sb.Append(nl);
+                    sb.Append(caption);
+                }
+            }
+
+            sections.Add(sb.ToString().Trim());
+        }
+
+        return new DocumentConverterResult(string.Join(nl + nl, sections));
     }
+
+    private static async Task<List<string>> ExtractImageCaptionsAsync(
+        Page page,
+        MarkItDownConversionContext context,
+        CancellationToken cancellationToken)
+    {
+        var captions = new List<string>();
+
+        if (context.LlmClient is not IChatClient llmClient)
+            return captions;
+
+        foreach (var image in page.GetImages())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            ReadOnlyMemory<byte> imageBytes;
+            string mimeType;
+
+            // Prefer raw JPEG bytes when the image stream IS a JPEG (DCTDecode filter).
+            if (IsJpeg(image.RawBytes))
+            {
+                imageBytes = image.RawBytes.ToArray();
+                mimeType = "image/jpeg";
+            }
+            else if (image.TryGetPng(out var pngBytes) && pngBytes is { Length: > 0 })
+            {
+                imageBytes = pngBytes;
+                mimeType = "image/png";
+            }
+            else
+            {
+                continue; // Cannot represent this image; skip.
+            }
+
+            var caption = await LlmHelpers.CaptionImageAsync(
+                llmClient, imageBytes, mimeType,
+                context.LlmModel, context.LlmPrompt, cancellationToken);
+
+            if (caption is not null)
+                captions.Add($"[Description: {caption.Trim()}]");
+        }
+
+        return captions;
+    }
+
+    private static bool IsJpeg(IReadOnlyList<byte> bytes) =>
+        bytes.Count >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF;
 
     private static string ReconstructPageText(IEnumerable<Word> words)
     {
@@ -98,3 +166,4 @@ public sealed class PdfConverter : DocumentConverter
         return sb.ToString().Trim();
     }
 }
+

@@ -2,6 +2,7 @@ using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using MarkItDown.Core.Models;
 using MarkItDown.Core.Utilities;
+using Microsoft.Extensions.AI;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using Presentation = DocumentFormat.OpenXml.Presentation;
@@ -16,7 +17,7 @@ public sealed partial class PptxConverter : DocumentConverter
             || streamInfo.MimeType?.StartsWith("application/vnd.openxmlformats-officedocument.presentationml", StringComparison.OrdinalIgnoreCase) == true;
     }
 
-    public override Task<DocumentConverterResult> ConvertAsync(
+    public override async Task<DocumentConverterResult> ConvertAsync(
         Stream stream,
         StreamInfo streamInfo,
         MarkItDownConversionContext context,
@@ -40,8 +41,8 @@ public sealed partial class PptxConverter : DocumentConverter
                 $"<!-- Slide number: {index + 1} -->"
             };
 
-            var titleWritten = false;
-            ProcessSlideContainer(slidePart, slidePart.Slide.CommonSlideData?.ShapeTree, lines, ref titleWritten);
+            var state = new SlideState();
+            await ProcessSlideContainerAsync(slidePart, slidePart.Slide.CommonSlideData?.ShapeTree, lines, state, context, cancellationToken);
 
             var notes = NormalizeWhitespace(slidePart.NotesSlidePart?.NotesSlide?.InnerText ?? string.Empty);
             if (!string.IsNullOrWhiteSpace(notes))
@@ -53,14 +54,16 @@ public sealed partial class PptxConverter : DocumentConverter
             sections.Add(string.Join(Environment.NewLine + Environment.NewLine, lines.Where(line => !string.IsNullOrWhiteSpace(line))));
         }
 
-        return Task.FromResult(new DocumentConverterResult(string.Join(Environment.NewLine + Environment.NewLine, sections)));
+        return new DocumentConverterResult(string.Join(Environment.NewLine + Environment.NewLine, sections));
     }
 
-    private static void ProcessSlideContainer(
+    private static async Task ProcessSlideContainerAsync(
         SlidePart slidePart,
         OpenXmlElement? container,
         List<string> lines,
-        ref bool titleWritten)
+        SlideState state,
+        MarkItDownConversionContext context,
+        CancellationToken cancellationToken)
     {
         if (container is null)
         {
@@ -74,10 +77,10 @@ public sealed partial class PptxConverter : DocumentConverter
                 var text = NormalizeWhitespace(shape.InnerText);
                 if (!string.IsNullOrWhiteSpace(text))
                 {
-                    if (!titleWritten && IsTitlePlaceholder(shape))
+                    if (!state.TitleWritten && IsTitlePlaceholder(shape))
                     {
                         lines.Add($"# {text}");
-                        titleWritten = true;
+                        state.TitleWritten = true;
                     }
                     else
                     {
@@ -90,7 +93,7 @@ public sealed partial class PptxConverter : DocumentConverter
 
             if (child.LocalName == "pic")
             {
-                var pictureMarkdown = ConvertPictureToMarkdown(child, slidePart);
+                var pictureMarkdown = await ConvertPictureToMarkdownAsync(child, slidePart, context, cancellationToken);
                 if (!string.IsNullOrWhiteSpace(pictureMarkdown))
                 {
                     lines.Add(pictureMarkdown);
@@ -112,12 +115,16 @@ public sealed partial class PptxConverter : DocumentConverter
 
             if (child is Presentation.GroupShape groupShape)
             {
-                ProcessSlideContainer(slidePart, groupShape, lines, ref titleWritten);
+                await ProcessSlideContainerAsync(slidePart, groupShape, lines, state, context, cancellationToken);
             }
         }
     }
 
-    private static string? ConvertPictureToMarkdown(OpenXmlElement picture, SlidePart slidePart)
+    private static async Task<string?> ConvertPictureToMarkdownAsync(
+        OpenXmlElement picture,
+        SlidePart slidePart,
+        MarkItDownConversionContext context,
+        CancellationToken cancellationToken)
     {
         var document = XDocument.Parse(picture.OuterXml);
         var drawingProperties = document.Descendants(PptNs + "cNvPr").FirstOrDefault();
@@ -142,6 +149,32 @@ public sealed partial class PptxConverter : DocumentConverter
         if (string.IsNullOrWhiteSpace(fileName))
         {
             fileName = $"{NonWordRegex().Replace(altText, string.Empty)}.jpg";
+        }
+
+        if (context.LlmClient is IChatClient llmClient && imagePart is not null)
+        {
+            try
+            {
+                using var imageStream = imagePart.GetStream();
+                var imageBytes = new byte[imageStream.Length];
+                await imageStream.ReadExactlyAsync(imageBytes, cancellationToken);
+
+                var mimeType = imagePart.ContentType ?? "image/jpeg";
+                var caption = await LlmHelpers.CaptionImageAsync(
+                    llmClient, imageBytes, mimeType,
+                    context.LlmModel, context.LlmPrompt, cancellationToken);
+
+                if (caption is not null)
+                {
+                    altText = string.IsNullOrWhiteSpace(altText) || altText == "image"
+                        ? caption.Trim()
+                        : $"{caption.Trim()} {altText}";
+                }
+            }
+            catch
+            {
+                // Ignore; use existing altText.
+            }
         }
 
         return $"![{altText}]({fileName})";
@@ -281,4 +314,9 @@ public sealed partial class PptxConverter : DocumentConverter
     private static readonly XNamespace ANs = "http://schemas.openxmlformats.org/drawingml/2006/main";
     private static readonly XNamespace CNs = "http://schemas.openxmlformats.org/drawingml/2006/chart";
     private static readonly XNamespace RNs = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+    private sealed class SlideState
+    {
+        public bool TitleWritten;
+    }
 }

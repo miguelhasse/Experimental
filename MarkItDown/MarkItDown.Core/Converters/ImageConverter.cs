@@ -1,5 +1,7 @@
 using MarkItDown.Core.Models;
+using MarkItDown.Core.Utilities;
 using MetadataExtractor;
+using Microsoft.Extensions.AI;
 
 namespace MarkItDown.Core.Converters;
 
@@ -16,7 +18,7 @@ public sealed class ImageConverter : DocumentConverter
             || streamInfo.MimeType?.StartsWith("image/", StringComparison.OrdinalIgnoreCase) == true;
     }
 
-    public override Task<DocumentConverterResult> ConvertAsync(
+    public override async Task<DocumentConverterResult> ConvertAsync(
         Stream stream,
         StreamInfo streamInfo,
         MarkItDownConversionContext context,
@@ -41,6 +43,36 @@ public sealed class ImageConverter : DocumentConverter
             lines.Add(string.Empty);
         }
 
-        return Task.FromResult(new DocumentConverterResult(string.Join(Environment.NewLine, lines).Trim()));
+        if (context.LlmClient is IChatClient llmClient)
+        {
+            stream.Position = 0;
+            var imageBytes = await StreamHelpers.ReadAllBytesAsync(stream, cancellationToken);
+            var mimeType = streamInfo.MimeType ?? InferMimeType(streamInfo.Extension);
+
+            var caption = await LlmHelpers.CaptionImageAsync(
+                llmClient, imageBytes, mimeType,
+                context.LlmModel, context.LlmPrompt, cancellationToken);
+
+            if (caption is not null)
+            {
+                lines.Add("# Description:");
+                lines.Add(caption.Trim());
+                lines.Add(string.Empty);
+            }
+        }
+
+        return new DocumentConverterResult(string.Join(Environment.NewLine, lines).Trim());
     }
+
+    private static string InferMimeType(string? extension) => extension?.ToLowerInvariant() switch
+    {
+        ".jpg" or ".jpeg" => "image/jpeg",
+        ".png"            => "image/png",
+        ".gif"            => "image/gif",
+        ".bmp"            => "image/bmp",
+        ".tif" or ".tiff" => "image/tiff",
+        ".webp"           => "image/webp",
+        _                 => "image/jpeg",
+    };
 }
+

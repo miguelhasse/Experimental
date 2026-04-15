@@ -2,6 +2,7 @@ using MarkItDown.Core.Converters;
 using MarkItDown.Core.Exceptions;
 using MarkItDown.Core.Models;
 using MarkItDown.Core.Utilities;
+using Microsoft.Extensions.AI;
 using System.Net.Http.Headers;
 using System.Text;
 
@@ -14,15 +15,25 @@ public sealed class MarkItDownService : IDisposable
 
     private readonly HttpClient _httpClient;
     private readonly bool _ownsHttpClient;
+    private readonly IChatClient? _llmClient;
+    private readonly string? _llmModel;
+    private readonly string? _llmPrompt;
     private readonly List<ConverterRegistration> _converters = [];
     private IReadOnlyList<ConverterRegistration>? _sortedConverters;
 
-    public MarkItDownService(HttpClient? httpClient = null)
+    public MarkItDownService(
+        HttpClient? httpClient = null,
+        IChatClient? llmClient = null,
+        string? llmModel = null,
+        string? llmPrompt = null)
     {
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
         _ownsHttpClient = httpClient is null;
         _httpClient = httpClient ?? new HttpClient();
+        _llmClient = llmClient;
+        _llmModel = llmModel;
+        _llmPrompt = llmPrompt;
 
         if (!_httpClient.DefaultRequestHeaders.Accept.Any())
         {
@@ -127,7 +138,7 @@ public sealed class MarkItDownService : IDisposable
     {
         await using var bufferedStream = await StreamHelpers.BufferAsync(stream, cancellationToken);
         var normalizedInfo = MimeHelpers.Normalize(streamInfo ?? new StreamInfo());
-        var context = new MarkItDownConversionContext(this, _httpClient);
+        var context = new MarkItDownConversionContext(this, _httpClient, _llmClient, _llmModel, _llmPrompt);
 
         foreach (var registration in Converters)
         {
