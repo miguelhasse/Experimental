@@ -474,16 +474,16 @@ public static class TestDataFactory
         html.Append("</body></html>");
 
         const string title = "Benchmark Book";
-        var titleBytes   = Encoding.UTF8.GetBytes(title);
+        var titleBytes = Encoding.UTF8.GetBytes(title);
         var contentBytes = Encoding.UTF8.GetBytes(html.ToString());
 
         // Layout matches TestDocumentFactory.CreateMobiStream (2 records, no compression).
-        const int record0Start   = 96;
+        const int record0Start = 96;
         const int fullNameOffset = 248; // 16 (PalmDoc) + 232 (MOBI)
 
-        var record0Size  = fullNameOffset + titleBytes.Length;
+        var record0Size = fullNameOffset + titleBytes.Length;
         var record1Start = record0Start + record0Size;
-        var totalSize    = record1Start + contentBytes.Length;
+        var totalSize = record1Start + contentBytes.Length;
 
         var buf = new byte[totalSize];
 
@@ -524,7 +524,7 @@ public static class TestDataFactory
 
     private static void WriteU32BE(byte[] buf, int offset, uint value)
     {
-        buf[offset]     = (byte)(value >> 24);
+        buf[offset] = (byte)(value >> 24);
         buf[offset + 1] = (byte)(value >> 16);
         buf[offset + 2] = (byte)(value >> 8);
         buf[offset + 3] = (byte)value;
@@ -532,7 +532,7 @@ public static class TestDataFactory
 
     private static void WriteU16BE(byte[] buf, int offset, ushort value)
     {
-        buf[offset]     = (byte)(value >> 8);
+        buf[offset] = (byte)(value >> 8);
         buf[offset + 1] = (byte)value;
     }
 }

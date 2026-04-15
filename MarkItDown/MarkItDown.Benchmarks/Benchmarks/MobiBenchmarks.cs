@@ -19,7 +19,7 @@ public class MobiBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        _service  = new MarkItDownService();
+        _service = new MarkItDownService();
         _smallMobi = TestDataFactory.CreateMobi(sections: 2);
         _largeMobi = TestDataFactory.CreateMobi(sections: 10);
     }

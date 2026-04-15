@@ -1,12 +1,14 @@
+using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using MarkItDown.Core.Models;
 using MarkItDown.Core.Utilities;
-using A = DocumentFormat.OpenXml.Drawing;
-using P = DocumentFormat.OpenXml.Presentation;
+using System.Text.RegularExpressions;
+using System.Xml.Linq;
+using Presentation = DocumentFormat.OpenXml.Presentation;
 
 namespace MarkItDown.Core.Converters;
 
-public sealed class PptxConverter : DocumentConverter
+public sealed partial class PptxConverter : DocumentConverter
 {
     public override bool Accepts(Stream stream, StreamInfo streamInfo)
     {
@@ -22,7 +24,7 @@ public sealed class PptxConverter : DocumentConverter
     {
         using var presentation = PresentationDocument.Open(stream, false);
         var presentationPart = presentation.PresentationPart;
-        var slideIds = presentationPart?.Presentation?.SlideIdList?.Elements<P.SlideId>().ToArray() ?? [];
+        var slideIds = presentationPart?.Presentation?.SlideIdList?.Elements<Presentation.SlideId>().ToArray() ?? [];
         var sections = new List<string>();
 
         for (var index = 0; index < slideIds.Length; index++)
@@ -39,39 +41,7 @@ public sealed class PptxConverter : DocumentConverter
             };
 
             var titleWritten = false;
-            foreach (var shape in slidePart.Slide.Descendants<P.Shape>())
-            {
-                var text = NormalizeWhitespace(shape.InnerText);
-                if (string.IsNullOrWhiteSpace(text))
-                {
-                    continue;
-                }
-
-                if (!titleWritten && IsTitlePlaceholder(shape))
-                {
-                    lines.Add($"# {text}");
-                    titleWritten = true;
-                }
-                else
-                {
-                    lines.Add(text);
-                }
-            }
-
-            foreach (var table in slidePart.Slide.Descendants<A.Table>())
-            {
-                var rows = table.Elements<A.TableRow>()
-                    .Select(row => (IReadOnlyList<string?>)row.Elements<A.TableCell>()
-                        .Select(cell => NormalizeWhitespace(cell.InnerText))
-                        .ToArray())
-                    .ToArray();
-
-                var markdownTable = MarkdownHelpers.BuildTable(rows);
-                if (!string.IsNullOrWhiteSpace(markdownTable))
-                {
-                    lines.Add(markdownTable);
-                }
-            }
+            ProcessSlideContainer(slidePart, slidePart.Slide.CommonSlideData?.ShapeTree, lines, ref titleWritten);
 
             var notes = NormalizeWhitespace(slidePart.NotesSlidePart?.NotesSlide?.InnerText ?? string.Empty);
             if (!string.IsNullOrWhiteSpace(notes))
@@ -86,18 +56,229 @@ public sealed class PptxConverter : DocumentConverter
         return Task.FromResult(new DocumentConverterResult(string.Join(Environment.NewLine + Environment.NewLine, sections)));
     }
 
-    private static bool IsTitlePlaceholder(P.Shape shape)
+    private static void ProcessSlideContainer(
+        SlidePart slidePart,
+        OpenXmlElement? container,
+        List<string> lines,
+        ref bool titleWritten)
+    {
+        if (container is null)
+        {
+            return;
+        }
+
+        foreach (var child in container.ChildElements)
+        {
+            if (child is Presentation.Shape shape)
+            {
+                var text = NormalizeWhitespace(shape.InnerText);
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    if (!titleWritten && IsTitlePlaceholder(shape))
+                    {
+                        lines.Add($"# {text}");
+                        titleWritten = true;
+                    }
+                    else
+                    {
+                        lines.Add(text);
+                    }
+                }
+
+                continue;
+            }
+
+            if (child.LocalName == "pic")
+            {
+                var pictureMarkdown = ConvertPictureToMarkdown(child, slidePart);
+                if (!string.IsNullOrWhiteSpace(pictureMarkdown))
+                {
+                    lines.Add(pictureMarkdown);
+                }
+
+                continue;
+            }
+
+            if (child.LocalName == "graphicFrame")
+            {
+                var graphicMarkdown = ConvertGraphicFrameToMarkdown(child, slidePart);
+                if (!string.IsNullOrWhiteSpace(graphicMarkdown))
+                {
+                    lines.Add(graphicMarkdown);
+                }
+
+                continue;
+            }
+
+            if (child is Presentation.GroupShape groupShape)
+            {
+                ProcessSlideContainer(slidePart, groupShape, lines, ref titleWritten);
+            }
+        }
+    }
+
+    private static string? ConvertPictureToMarkdown(OpenXmlElement picture, SlidePart slidePart)
+    {
+        var document = XDocument.Parse(picture.OuterXml);
+        var drawingProperties = document.Descendants(PptNs + "cNvPr").FirstOrDefault();
+        var altText = SanitizeAltText(
+            drawingProperties?.Attribute("descr")?.Value
+            ?? drawingProperties?.Attribute("name")?.Value
+            ?? string.Empty);
+        if (string.IsNullOrWhiteSpace(altText))
+        {
+            altText = "image";
+        }
+
+        var embedId = document.Descendants(ANs + "blip")
+            .Attributes(RNs + "embed")
+            .Select(attribute => attribute.Value)
+            .FirstOrDefault();
+        var imagePart = embedId is null ? null : slidePart.GetPartById(embedId) as ImagePart;
+        var fileName = imagePart?.Uri is Uri uri
+            ? Path.GetFileName(uri.OriginalString)
+            : null;
+
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            fileName = $"{NonWordRegex().Replace(altText, string.Empty)}.jpg";
+        }
+
+        return $"![{altText}]({fileName})";
+    }
+
+    private static string? ConvertGraphicFrameToMarkdown(OpenXmlElement graphicFrame, SlidePart slidePart)
+    {
+        var document = XDocument.Parse(graphicFrame.OuterXml);
+
+        var table = document.Descendants(ANs + "table").FirstOrDefault();
+        if (table is not null)
+        {
+            var rows = table.Elements(ANs + "tr")
+                .Select(row => (IReadOnlyList<string?>)row.Elements(ANs + "tc")
+                    .Select(cell => NormalizeWhitespace(string.Join(" ", cell.Descendants(ANs + "t").Select(text => text.Value))))
+                    .ToArray())
+                .ToArray();
+
+            return MarkdownHelpers.BuildTable(rows);
+        }
+
+        var chartReference = document.Descendants(CNs + "chart")
+            .Attributes(RNs + "id")
+            .Select(attribute => attribute.Value)
+            .FirstOrDefault();
+        var chartPart = chartReference is null ? null : slidePart.GetPartById(chartReference) as ChartPart;
+        var chartXml = chartPart?.ChartSpace?.OuterXml;
+        if (string.IsNullOrWhiteSpace(chartXml))
+        {
+            return null;
+        }
+
+        return ConvertChartXmlToMarkdown(XDocument.Parse(chartXml));
+    }
+
+    private static string? ConvertChartXmlToMarkdown(XDocument chartDocument)
+    {
+        var chart = chartDocument.Descendants(CNs + "chart").FirstOrDefault();
+        if (chart is null)
+        {
+            return null;
+        }
+
+        var series = chart.Descendants(CNs + "ser").ToArray();
+        if (series.Length == 0)
+        {
+            return null;
+        }
+
+        var categories = GetChartValues(series[0].Element(CNs + "cat"));
+        if (categories.Count == 0)
+        {
+            return null;
+        }
+
+        var seriesNames = series.Select((item, index) => GetChartSeriesName(item) ?? $"Series {index + 1}").ToArray();
+        var rows = new List<IReadOnlyList<string?>>();
+        var header = new string?[series.Length + 1];
+        header[0] = "Category";
+        Array.Copy(seriesNames, 0, header, 1, seriesNames.Length);
+        rows.Add(header);
+
+        for (var rowIndex = 0; rowIndex < categories.Count; rowIndex++)
+        {
+            var row = new string?[series.Length + 1];
+            row[0] = categories[rowIndex];
+            for (var seriesIndex = 0; seriesIndex < series.Length; seriesIndex++)
+            {
+                var values = GetChartValues(series[seriesIndex].Element(CNs + "val"));
+                row[seriesIndex + 1] = rowIndex < values.Count ? values[rowIndex] : string.Empty;
+            }
+
+            rows.Add(row);
+        }
+
+        var chartTitleParts = chart.Element(CNs + "title")?.Descendants(ANs + "t").Select(text => text.Value).ToArray() ?? [];
+        var chartTitle = NormalizeWhitespace(string.Join(" ", chartTitleParts));
+        var heading = string.IsNullOrWhiteSpace(chartTitle) ? "### Chart" : $"### Chart: {chartTitle}";
+        var table = MarkdownHelpers.BuildTable(rows.ToArray());
+        return string.IsNullOrWhiteSpace(table)
+            ? heading
+            : $"{heading}{Environment.NewLine}{Environment.NewLine}{table}";
+    }
+
+    private static IReadOnlyList<string> GetChartValues(XElement? valueContainer)
+    {
+        if (valueContainer is null)
+        {
+            return [];
+        }
+
+        var cache = valueContainer.Descendants(CNs + "strCache").FirstOrDefault()
+            ?? valueContainer.Descendants(CNs + "numCache").FirstOrDefault()
+            ?? valueContainer.Descendants(CNs + "multiLvlStrCache").FirstOrDefault();
+        if (cache is null)
+        {
+            return [];
+        }
+
+        return cache.Elements(CNs + "pt")
+            .OrderBy(point => (int?)point.Attribute("idx") ?? 0)
+            .Select(point => NormalizeWhitespace(point.Element(CNs + "v")?.Value ?? string.Empty))
+            .ToArray();
+    }
+
+    private static string? GetChartSeriesName(XElement series)
+    {
+        var name = series.Element(CNs + "tx")?.Descendants(CNs + "v").FirstOrDefault()?.Value
+            ?? series.Element(CNs + "tx")?.Descendants(ANs + "t").FirstOrDefault()?.Value;
+        return string.IsNullOrWhiteSpace(name) ? null : NormalizeWhitespace(name);
+    }
+
+    private static bool IsTitlePlaceholder(Presentation.Shape shape)
     {
         var placeholder = shape.NonVisualShapeProperties?
             .ApplicationNonVisualDrawingProperties?
-            .GetFirstChild<P.PlaceholderShape>();
+            .GetFirstChild<Presentation.PlaceholderShape>();
 
         var value = placeholder?.Type?.Value;
-        return value == P.PlaceholderValues.Title || value == P.PlaceholderValues.CenteredTitle;
+        return value == Presentation.PlaceholderValues.Title || value == Presentation.PlaceholderValues.CenteredTitle;
     }
 
     private static string NormalizeWhitespace(string value)
     {
         return string.Join(" ", value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
     }
+
+    private static string SanitizeAltText(string value)
+    {
+        return NormalizeWhitespace(value.Replace('\r', ' ').Replace('\n', ' ').Replace('[', ' ').Replace(']', ' '));
+    }
+
+    [GeneratedRegex(@"\W+")]
+    private static partial Regex NonWordRegex();
+
+    private static readonly XNamespace PptNs = "http://schemas.openxmlformats.org/presentationml/2006/main";
+    private static readonly XNamespace ANs = "http://schemas.openxmlformats.org/drawingml/2006/main";
+    private static readonly XNamespace CNs = "http://schemas.openxmlformats.org/drawingml/2006/chart";
+    private static readonly XNamespace RNs = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 }

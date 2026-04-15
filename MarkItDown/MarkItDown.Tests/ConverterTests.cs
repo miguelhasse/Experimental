@@ -110,6 +110,24 @@ public sealed class ConverterTests : IDisposable
     }
 
     [Fact]
+    public async Task CsvConversion_HandlesShiftJISEncoding()
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        var shiftJis = Encoding.GetEncoding(932);
+        var csv = "名前,年齢\r\n佐藤太郎,30\r\n三木英子,25";
+        var bytes = shiftJis.GetBytes(csv);
+
+        await using var stream = new MemoryStream(bytes);
+        var result = await ConvertStreamAsync(
+            stream,
+            new StreamInfo(FileName: "test.csv", Extension: ".csv", MimeType: "text/csv"));
+
+        Assert.Contains("名前", result.Markdown);
+        Assert.Contains("佐藤太郎", result.Markdown);
+        Assert.Contains("三木英子", result.Markdown);
+    }
+
+    [Fact]
     public async Task DataUri_TextPlain_IsConverted()
     {
         var result = await ConvertAsync("data:text/plain;base64,SGVsbG8gV29ybGQ=");
@@ -207,6 +225,85 @@ public sealed class ConverterTests : IDisposable
     }
 
     [Fact]
+    public async Task RssConversion_FormatsLinkAsMarkdown()
+    {
+        const string rss =
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <rss version="2.0">
+              <channel>
+                <title>Link Feed</title>
+                <item>
+                  <title>Click Me</title>
+                  <link>https://example.com/click</link>
+                  <description>Simple description</description>
+                </item>
+              </channel>
+            </rss>
+            """;
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(rss));
+
+        var result = await ConvertStreamAsync(
+            stream,
+            new StreamInfo(FileName: "feed.rss", Extension: ".rss"));
+
+        Assert.Contains("[Click Me](https://example.com/click)", result.Markdown);
+    }
+
+    [Fact]
+    public async Task RssConversion_EmitsPublishedDate()
+    {
+        const string rss =
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <rss version="2.0">
+              <channel>
+                <title>Date Feed</title>
+                <item>
+                  <title>Dated Item</title>
+                  <pubDate>Mon, 01 Jan 2024 00:00:00 +0000</pubDate>
+                  <description>Has a date</description>
+                </item>
+              </channel>
+            </rss>
+            """;
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(rss));
+
+        var result = await ConvertStreamAsync(
+            stream,
+            new StreamInfo(FileName: "feed.rss", Extension: ".rss"));
+
+        Assert.Contains("Published on:", result.Markdown);
+    }
+
+    [Fact]
+    public async Task RssConversion_StripsHtmlFromDescription()
+    {
+        const string rss =
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <rss version="2.0">
+              <channel>
+                <title>HTML Feed</title>
+                <item>
+                  <title>HTML Item</title>
+                  <description>&lt;p&gt;Hello &lt;strong&gt;world&lt;/strong&gt;&lt;/p&gt;</description>
+                </item>
+              </channel>
+            </rss>
+            """;
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(rss));
+
+        var result = await ConvertStreamAsync(
+            stream,
+            new StreamInfo(FileName: "feed.rss", Extension: ".rss"));
+
+        Assert.Contains("Hello", result.Markdown);
+        Assert.DoesNotContain("<p>", result.Markdown);
+        Assert.DoesNotContain("<strong>", result.Markdown);
+    }
+
+    [Fact]
     public async Task RssConversion_AtomFeed_ProducesMarkdown()
     {
         const string atom =
@@ -229,6 +326,57 @@ public sealed class ConverterTests : IDisposable
 
         Assert.Contains("# Atom Feed", result.Markdown);
         Assert.Contains("## Entry One", result.Markdown);
+        Assert.Contains("[Entry One](https://example.com/entry/1)", result.Markdown);
+    }
+
+    [Fact]
+    public async Task RssConversion_XmlExtension_IsDetectedByContent()
+    {
+        const string rss =
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <rss version="2.0">
+              <channel>
+                <title>XML Feed</title>
+                <item>
+                  <title>XML Item</title>
+                </item>
+              </channel>
+            </rss>
+            """;
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(rss));
+
+        var result = await ConvertStreamAsync(
+            stream,
+            new StreamInfo(FileName: "feed.xml", Extension: ".xml"));
+
+        Assert.Equal("XML Feed", result.Title);
+        Assert.Contains("## XML Item", result.Markdown);
+    }
+
+    [Theory]
+    [InlineData("text/xml")]
+    [InlineData("application/xml")]
+    public async Task RssConversion_XmlMimeType_IsDetectedByContent(string mimeType)
+    {
+        const string atom =
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <feed xmlns="http://www.w3.org/2005/Atom">
+              <title>XML MIME Feed</title>
+              <entry>
+                <title>XML MIME Entry</title>
+              </entry>
+            </feed>
+            """;
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(atom));
+
+        var result = await ConvertStreamAsync(
+            stream,
+            new StreamInfo(MimeType: mimeType));
+
+        Assert.Equal("XML MIME Feed", result.Title);
+        Assert.Contains("## XML MIME Entry", result.Markdown);
     }
 
     // ── ZIP ───────────────────────────────────────────────────────────────────
@@ -303,6 +451,53 @@ public sealed class ConverterTests : IDisposable
 
         Assert.Contains("Test Article", result.Markdown);
         Assert.Equal("Test Article - Wikipedia", result.Title);
+    }
+
+    [Fact]
+    public async Task WikipediaConversion_ExtractsMainContent()
+    {
+        await using var stream = TestDocumentFactory.CreateWikipediaHtmlStream();
+
+        var result = await ConvertStreamAsync(
+            stream,
+            new StreamInfo(Url: "https://en.wikipedia.org/wiki/Cat"));
+
+        Assert.Contains("carnivorous mammal", result.Markdown);
+        Assert.DoesNotContain("Navigation chrome", result.Markdown);
+        Assert.DoesNotContain("Footer chrome", result.Markdown);
+    }
+
+    [Fact]
+    public async Task WikipediaConversion_PrependsTitleHeading()
+    {
+        await using var stream = TestDocumentFactory.CreateWikipediaHtmlStream();
+
+        var result = await ConvertStreamAsync(
+            stream,
+            new StreamInfo(Url: "https://en.wikipedia.org/wiki/Cat"));
+
+        Assert.StartsWith("# Cat", result.Markdown);
+        Assert.Equal("Cat", result.Title);
+    }
+
+    [Fact]
+    public async Task WikipediaConversion_FallsBackOnGenericHtml()
+    {
+        await using var stream = TestDocumentFactory.CreateGenericHtmlStream();
+
+        var result = await ConvertStreamAsync(
+            stream,
+            new StreamInfo(Url: "https://en.wikipedia.org/wiki/Anything"));
+
+        Assert.Contains("generic content", result.Markdown);
+    }
+
+    [Fact]
+    public void WikipediaConverter_RejectsSpoof_NotWikipediaOrg()
+    {
+        var converter = new WikipediaConverter();
+        using var stream = new MemoryStream();
+        Assert.False(converter.Accepts(stream, new StreamInfo(Url: "https://notwikipedia.org/wiki/Test")));
     }
 
     // ── YouTube ───────────────────────────────────────────────────────────────
@@ -393,7 +588,80 @@ public sealed class ConverterTests : IDisposable
         Assert.Equal("My Document", result.Title);
     }
 
-    // ── XLSX ──────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task DocxConversion_UsesOutlineLevelForHeadings()
+    {
+        await using var stream = TestDocumentFactory.CreateDocxStreamWithOutlineHeading();
+
+        var result = await ConvertStreamAsync(
+            stream,
+            new StreamInfo(FileName: "document.docx", Extension: ".docx"));
+
+        Assert.Contains("# Outline Heading", result.Markdown);
+    }
+
+    [Fact]
+    public async Task DocxConversion_EmitsBoldMarkdown()
+    {
+        await using var stream = TestDocumentFactory.CreateDocxStreamWithBoldItalicRuns();
+
+        var result = await ConvertStreamAsync(
+            stream,
+            new StreamInfo(FileName: "document.docx", Extension: ".docx"));
+
+        Assert.Contains("**bold text**", result.Markdown);
+    }
+
+    [Fact]
+    public async Task DocxConversion_EmitsItalicMarkdown()
+    {
+        await using var stream = TestDocumentFactory.CreateDocxStreamWithBoldItalicRuns();
+
+        var result = await ConvertStreamAsync(
+            stream,
+            new StreamInfo(FileName: "document.docx", Extension: ".docx"));
+
+        Assert.Contains("_italic text_", result.Markdown);
+    }
+
+    [Fact]
+    public async Task DocxConversion_EmitsBoldItalicMarkdown()
+    {
+        await using var stream = TestDocumentFactory.CreateDocxStreamWithBoldItalicRuns();
+
+        var result = await ConvertStreamAsync(
+            stream,
+            new StreamInfo(FileName: "document.docx", Extension: ".docx"));
+
+        Assert.Contains("**_bold italic text_**", result.Markdown);
+    }
+
+    [Fact]
+    public async Task DocxConversion_ResolvesCustomStyleInheritanceToHeading()
+    {
+        await using var stream = TestDocumentFactory.CreateDocxStreamWithCustomHeadingStyle();
+
+        var result = await ConvertStreamAsync(
+            stream,
+            new StreamInfo(FileName: "document.docx", Extension: ".docx"));
+
+        Assert.Contains("# Custom Heading", result.Markdown);
+    }
+
+    [Fact]
+    public async Task DocxConversion_EmitsEmbeddedImageMarkdown()
+    {
+        await using var stream = TestDocumentFactory.CreateDocxStreamWithEmbeddedImage();
+
+        var result = await ConvertStreamAsync(
+            stream,
+            new StreamInfo(FileName: "document.docx", Extension: ".docx"));
+
+        Assert.Contains("Before image", result.Markdown);
+        Assert.Contains("After image", result.Markdown);
+        Assert.Contains("![Sample image](data:image/bmp;base64,", result.Markdown);
+    }    // ── XLSX ──────────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task XlsxConversion_ProducesMarkdownTable()
@@ -693,4 +961,5 @@ public sealed class ConverterTests : IDisposable
         writer.Write(content);
     }
 }
+
 

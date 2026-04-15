@@ -164,28 +164,28 @@ Both derive from `FileConversionException`. `UnsupportedFormatException` is seal
 
 ### Priority 0 (specific — checked first)
 
-| Converter | Accepts | Notes |
+| Converter | Accepts | Output |
 |---|---|---|
-| `WikipediaConverter` | URLs with `wikipedia.org` host | Full article HTML → Markdown via `HtmlMarkdownConverter` |
-| `YouTubeConverter` | `youtube.com` / `youtu.be` URLs | Extracts `og:title`, `og:description`, page title via meta tags |
-| `DocxConverter` | `.docx`, OOXML MIME | Headings 1–6, paragraphs, list items (bullet), tables |
-| `XlsxConverter` | `.xlsx`, OOXML MIME | Each sheet → `## SheetName` + Markdown table; handles shared strings |
-| `PptxConverter` | `.pptx`, OOXML MIME | Each slide → comment block + title + body text + tables + notes |
-| `PdfConverter` | `.pdf`, `application/pdf` | Page-by-page plain text extraction |
-| `ImageConverter` | Common image extensions + `image/*` MIME | Full EXIF / metadata dump as Markdown lists |
-| `EpubConverter` | `.epub`, `application/epub+zip` | Reading-order chapters → HTML → Markdown |
-| `MobiConverter` | `.mobi`, `.azw`, `application/x-mobipocket-ebook`, `application/x-mobi8-ebook` | PalmDB container + PalmDoc decompression → HTML → Markdown; title from MOBI FullName or PalmDB name |
-| `ChmConverter` | `.chm`, `application/vnd.ms-htmlhelp`, ITSF magic | ITSF binary container + LZX decompression → HTML → Markdown; title from `#SYSTEM`; TOC order from HHC |
+| `WikipediaConverter` | URLs matching `^https?://[a-zA-Z]{2,3}\.wikipedia\.org/` | Strips navigation chrome via `mw-content-text`; prepends `# Title` from `mw-page-title-main`; falls back to generic HTML if content div absent |
+| `YouTubeConverter` | `youtube.com` / `youtu.be` URLs | Extracts `og:title`, `og:description`, canonical URL; format: `# Title\n\nURL\n\ndescription` |
+| `DocxConverter` | `.docx`, OOXML MIME | Headings 1–6 (including custom styles resolved via `basedOn` inheritance chain), paragraphs with inline **bold** and _italic_, bullet lists, tables, embedded images as `data:` URIs |
+| `XlsxConverter` | `.xlsx`, OOXML MIME | Each sheet → `## SheetName\n\n` + GFM pipe table; handles sparse cells via column-letter resolution, shared string table, and boolean cells |
+| `PptxConverter` | `.pptx`, OOXML MIME | Each slide → `<!-- Slide number: N -->` + `# Title` + body text + GFM tables + `### Chart: Name` + chart data tables + `### Notes:` block; shapes sorted by `(top, left)` |
+| `PdfConverter` | `.pdf`, `application/pdf` | Page-by-page: word bounding boxes sorted by Y↓ then X, grouped into lines (tolerance = `avgWordHeight × 0.5`), separated into paragraphs (gap > `avgLineHeight × 1.5`); each page prefixed `## Page N` |
+| `ImageConverter` | Common image extensions + `image/*` MIME | Full EXIF / IPTC / XMP metadata dump grouped by directory as Markdown lists; no external binary required |
+| `EpubConverter` | `.epub`, `application/epub+zip` | Reads spine items in order; looks up each chapter in NCX/NAV navigation map to emit `## Chapter Title`; converts chapter HTML to Markdown; metadata block at top |
+| `MobiConverter` | `.mobi`, `.azw`, `application/x-mobipocket-ebook`, magic bytes | PalmDB container → PalmDoc LZ77 decompression → HTML → `HtmlMarkdownConverter`; title from MOBI FullName or PalmDB record name |
+| `ChmConverter` | `.chm`, `application/vnd.ms-htmlhelp`, ITSF magic | ITSF/ITSP binary container + LZX sliding-window decompression → HTML pages → `HtmlMarkdownConverter`; title from `#SYSTEM`; page order from HHC TOC |
 
 ### Priority 10 (generic — fallback chain)
 
-| Converter | Accepts | Notes |
+| Converter | Accepts | Output |
 |---|---|---|
-| `ZipConverter` | `.zip`, `application/zip` | Recursively converts each entry via the service; sanitises path traversal |
-| `RssConverter` | RSS/Atom MIME or `.rss`/`.atom` extension | Feed title + description + items (title, link, summary) |
-| `CsvConverter` | `.csv`, `text/csv`, `application/csv` | First row is the header; all cells pipe-escaped |
-| `HtmlConverter` | `.html`/`.htm`, `text/html`, `application/xhtml` | Strips `<script>` and `<style>`, converts body via ReverseMarkdown |
-| `PlainTextConverter` | Text extensions + `text/*` / `application/json` / `application/xml` MIMEs | Charset-aware decoding; rejects known binary MIMEs even if charset is set |
+| `ZipConverter` | `.zip`, `application/zip` | Recursively converts each entry via the service; prefixes each result with `## File: {name}`; sanitises `..` and backslash path traversal |
+| `RssConverter` | RSS/Atom MIME or `.rss`/`.atom` extension | `# Feed Title` + `[Feed Title](url)` link + description + per-item `## Item Title` with `[Item Title](url)` link, `Published on: {RFC 1123}`, and HTML-stripped summary |
+| `CsvConverter` | `.csv`, `text/csv`, `application/csv` | First row is the header; all cells pipe-escaped; encoding auto-detected via BOM → UTF-8 strict probe → round-trip fidelity scoring across CP932/GBK/Big5/EUC-KR/EUC-JP/Latin-1 |
+| `HtmlConverter` | `.html`/`.htm`, `text/html`, `application/xhtml` | Strips `<script>` and `<style>`, converts body via ReverseMarkdown; title extracted to `DocumentConverterResult.Title` |
+| `PlainTextConverter` | Text extensions + `text/*` / `application/json` / `application/xml` MIMEs | Charset-aware decoding (BOM → UTF-8 → Latin-1); rejects known binary MIMEs even if `text/*` MIME is declared |
 
 ---
 
@@ -193,11 +193,11 @@ Both derive from `FileConversionException`. `UnsupportedFormatException` is seal
 
 | Class | Purpose |
 |---|---|
-| `MimeHelpers` | Extension ↔ MIME mapping, `Normalize(StreamInfo)`, `GetFileNameFromUrl` |
-| `StreamHelpers` | `BufferAsync` (copy to seekable `MemoryStream`), `ReadAllTextAsync`, charset detection with BOM + UTF-8 probe + Latin-1 fallback |
+| `MimeHelpers` | Extension ↔ MIME mapping, `Normalize(StreamInfo)`, `GetFileNameFromUrl`; infers extension from MIME when absent |
+| `StreamHelpers` | `BufferAsync` (copy to seekable `MemoryStream`), `ReadAllTextAsync` with BOM detection → UTF-8 strict probe → multi-encoding round-trip heuristic → Latin-1 fallback; registers `CodePagesEncodingProvider` |
 | `MarkdownHelpers` | `BuildTable(rows)` with pipe-escaping, `EscapeInline` |
-| `HtmlMarkdownConverter` | Shared HTML → `DocumentConverterResult` pipeline used by HTML, Wikipedia, EPUB, and MOBI converters |
-| `PalmDocDecoder` | PalmDoc LZ77 decompressor used by `MobiConverter`; supports compression types 1 (none) and 2 (LZ77) |
+| `HtmlMarkdownConverter` | Shared HTML → `DocumentConverterResult` pipeline: strips scripts/styles, extracts title, converts via ReverseMarkdown; used by HTML, Wikipedia, EPUB, and MOBI converters |
+| `PalmDocDecoder` | PalmDoc LZ77 decompressor used by `MobiConverter`; supports compression type 1 (none) and type 2 (LZ77) |
 | `ChmParser` | ITSF/ITSP binary parser used by `ChmConverter`; walks PMGL B-tree, reads `#SYSTEM` title, exposes section-0 (uncompressed) and section-1 (LZX) files |
 | `LzxDecoder` | CHM-variant LZX sliding-window decompressor used by `ChmParser`; pure algorithmic, AOT-safe |
 

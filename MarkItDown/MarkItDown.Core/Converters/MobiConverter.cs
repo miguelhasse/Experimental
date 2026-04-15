@@ -84,7 +84,7 @@ public sealed class MobiConverter : DocumentConverter
             throw new InvalidOperationException("Record 0 is truncated.");
 
         var compression = ReadUInt16(data, record0Offset);       // +0
-        var textLength   = (int)ReadUInt32(data, record0Offset + 4); // +4
+        var textLength = (int)ReadUInt32(data, record0Offset + 4); // +4
         var textRecCount = ReadUInt16(data, record0Offset + 8);  // +8
 
         // MOBI header starts at record0Offset + 16
@@ -93,7 +93,7 @@ public sealed class MobiConverter : DocumentConverter
         var encoding = Encoding.UTF8;
 
         if (data.Length >= mobiHeaderStart + 4
-            && data[mobiHeaderStart]     == 'M'
+            && data[mobiHeaderStart] == 'M'
             && data[mobiHeaderStart + 1] == 'O'
             && data[mobiHeaderStart + 2] == 'B'
             && data[mobiHeaderStart + 3] == 'I')
@@ -119,15 +119,15 @@ public sealed class MobiConverter : DocumentConverter
         }
 
         var title = !string.IsNullOrWhiteSpace(mobiTitle) ? mobiTitle
-                  : !string.IsNullOrWhiteSpace(palmTitle)  ? palmTitle
+                  : !string.IsNullOrWhiteSpace(palmTitle) ? palmTitle
                   : null;
 
         // Read text records (1 through textRecCount).
         var htmlParts = new List<string>(textRecCount);
         for (var i = 1; i <= textRecCount && i < numRecords; i++)
         {
-            var recOffset   = (int)ReadUInt32(data, 78 + i * 8);
-            var nextOffset  = (i < numRecords - 1)
+            var recOffset = (int)ReadUInt32(data, 78 + i * 8);
+            var nextOffset = (i < numRecords - 1)
                 ? (int)ReadUInt32(data, 78 + (i + 1) * 8)
                 : data.Length;
 

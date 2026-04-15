@@ -2,13 +2,14 @@ using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using System.IO.Compression;
 using System.Text;
-using W = DocumentFormat.OpenXml.Wordprocessing;
+using A = DocumentFormat.OpenXml.Drawing;
+using DW = DocumentFormat.OpenXml.Drawing.Wordprocessing;
 using S = DocumentFormat.OpenXml.Spreadsheet;
-
+using W = DocumentFormat.OpenXml.Wordprocessing;
 namespace MarkItDown.Tests;
 
 /// <summary>Creates minimal in-memory binary documents for converter tests.</summary>
-internal static class TestDocumentFactory
+internal static partial class TestDocumentFactory
 {
     /// <summary>Creates a minimal DOCX with a Heading1 paragraph and a body paragraph.</summary>
     internal static MemoryStream CreateDocxStream(string? title = null)
@@ -31,7 +32,143 @@ internal static class TestDocumentFactory
         ms.Position = 0;
         return ms;
     }
+    /// <summary>Creates a DOCX with bold and italic runs in a paragraph.</summary>
+    internal static MemoryStream CreateDocxStreamWithBoldItalicRuns()
+    {
+        var ms = new MemoryStream();
+        using (var doc = WordprocessingDocument.Create(ms, WordprocessingDocumentType.Document, true))
+        {
+            var mainPart = doc.AddMainDocumentPart();
+            mainPart.Document = new W.Document(new W.Body(
+                new W.Paragraph(
+                    new W.Run(
+                        new W.RunProperties(new W.Bold()),
+                        new W.Text("bold text")),
+                    new W.Run(
+                        new W.RunProperties(new W.Italic()),
+                        new W.Text("italic text")),
+                    new W.Run(
+                        new W.RunProperties(new W.Bold(), new W.Italic()),
+                        new W.Text("bold italic text")))));
+            mainPart.Document.Save();
+        }
 
+        ms.Position = 0;
+        return ms;
+    }
+
+    /// <summary>Creates a DOCX with a custom style "MyHeading" whose basedOn chain resolves to Heading1.</summary>
+    internal static MemoryStream CreateDocxStreamWithCustomHeadingStyle()
+    {
+        var ms = new MemoryStream();
+        using (var doc = WordprocessingDocument.Create(ms, WordprocessingDocumentType.Document, true))
+        {
+            var mainPart = doc.AddMainDocumentPart();
+
+            var stylesPart = mainPart.AddNewPart<StyleDefinitionsPart>();
+            var heading1Style = new W.Style(
+                new W.StyleName { Val = "heading 1" })
+            {
+                Type = W.StyleValues.Paragraph,
+                StyleId = "Heading1",
+            };
+            var myHeadingStyle = new W.Style(
+                new W.StyleName { Val = "MyHeading" },
+                new W.BasedOn { Val = "Heading1" })
+            {
+                Type = W.StyleValues.Paragraph,
+                StyleId = "MyHeading",
+            };
+            stylesPart.Styles = new W.Styles(heading1Style, myHeadingStyle);
+            stylesPart.Styles.Save();
+
+            mainPart.Document = new W.Document(new W.Body(
+                new W.Paragraph(
+                    new W.ParagraphProperties(new W.ParagraphStyleId { Val = "MyHeading" }),
+                    new W.Run(new W.Text("Custom Heading")))));
+            mainPart.Document.Save();
+        }
+
+        ms.Position = 0;
+        return ms;
+    }
+
+
+    /// <summary>Creates a DOCX whose heading uses outline-level semantics instead of a Heading style id.</summary>
+    internal static MemoryStream CreateDocxStreamWithOutlineHeading()
+    {
+        var ms = new MemoryStream();
+        using (var doc = WordprocessingDocument.Create(ms, WordprocessingDocumentType.Document, true))
+        {
+            var mainPart = doc.AddMainDocumentPart();
+            mainPart.Document = new W.Document(new W.Body(
+                new W.Paragraph(
+                    new W.ParagraphProperties(new W.OutlineLevel { Val = 0 }),
+                    new W.Run(new W.Text("Outline Heading"))),
+                new W.Paragraph(
+                    new W.Run(new W.Text("Body text")))));
+            mainPart.Document.Save();
+        }
+
+        ms.Position = 0;
+        return ms;
+    }
+
+    /// <summary>Creates a DOCX with an embedded image and alt text.</summary>
+    internal static MemoryStream CreateDocxStreamWithEmbeddedImage(string altText = "Sample image")
+    {
+        var ms = new MemoryStream();
+        using (var doc = WordprocessingDocument.Create(ms, WordprocessingDocumentType.Document, true))
+        {
+            var mainPart = doc.AddMainDocumentPart();
+            using var imageStream = CreateBmpStream();
+            var imagePart = mainPart.AddImagePart(ImagePartType.Bmp);
+            imagePart.FeedData(imageStream);
+            var relationshipId = mainPart.GetIdOfPart(imagePart);
+
+            mainPart.Document = new W.Document(new W.Body(
+                new W.Paragraph(
+                    new W.Run(new W.Text("Before image")),
+                    new W.Run(CreateDrawing(relationshipId, altText)),
+                    new W.Run(new W.Text("After image")))));
+            mainPart.Document.Save();
+        }
+
+        ms.Position = 0;
+        return ms;
+    }
+
+    private static W.Drawing CreateDrawing(string relationshipId, string altText)
+    {
+        var drawing = new W.Drawing();
+        var inline = new DW.Inline();
+        inline.Append(
+            new DW.Extent { Cx = 990000L, Cy = 792000L },
+            new DW.DocProperties { Id = 1U, Name = "Picture 1", Description = altText },
+            new DW.NonVisualGraphicFrameDrawingProperties(new A.GraphicFrameLocks { NoChangeAspect = true }),
+            new A.Graphic(
+                new A.GraphicData(
+                    new A.Picture(
+                        new A.NonVisualPictureProperties(
+                            new A.NonVisualDrawingProperties { Id = 0U, Name = "Picture 1" },
+                            new A.NonVisualPictureDrawingProperties()),
+                        new A.BlipFill(
+                            new A.Blip { Embed = relationshipId },
+                            new A.Stretch(new A.FillRectangle())),
+                        new A.ShapeProperties(
+                            new A.Transform2D(
+                                new A.Offset { X = 0L, Y = 0L },
+                                new A.Extents { Cx = 990000L, Cy = 792000L }),
+                            new A.PresetGeometry(new A.AdjustValueList())
+                            {
+                                Preset = A.ShapeTypeValues.Rectangle
+                            })))
+                {
+                    Uri = "http://schemas.openxmlformats.org/drawingml/2006/picture"
+                }));
+        drawing.AppendChild(inline);
+        return drawing;
+    }
     /// <summary>Creates a minimal XLSX with a single sheet containing a header row and one data row.</summary>
     internal static MemoryStream CreateXlsxStream()
     {
@@ -148,8 +285,22 @@ internal static class TestDocumentFactory
     }
 
     /// <summary>Creates a minimal EPUB (assembled as a ZIP) with one chapter.</summary>
-    internal static MemoryStream CreateEpubStream()
+    internal static MemoryStream CreateEpubStream(
+        string? title = "Test Book",
+        string[]? authors = null,
+        string? language = "en",
+        string? description = "A test EPUB document for MarkItDown testing",
+        string? identifier = "test-book-id")
     {
+        var safeTitle = title ?? "Test Book";
+        var safeLanguage = language ?? "en";
+        var safeDescription = description ?? "A test EPUB document for MarkItDown testing";
+        var safeIdentifier = identifier ?? "test-book-id";
+        authors ??= ["Test Author"];
+        var creatorEntries = string.Join(
+            Environment.NewLine,
+            authors.Select(author => $"<dc:creator>{EscapeXml(author)}</dc:creator>"));
+
         var ms = new MemoryStream();
         using (var archive = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
         {
@@ -167,13 +318,15 @@ internal static class TestDocumentFactory
                 </container>
                 """);
             AddEntry(archive, "OEBPS/content.opf",
-                """
+                $$"""
                 <?xml version="1.0" encoding="UTF-8"?>
                 <package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="BookId">
                   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-                    <dc:title>Test Book</dc:title>
-                    <dc:identifier id="BookId">test-book-001</dc:identifier>
-                    <dc:language>en</dc:language>
+                    <dc:title>{{EscapeXml(safeTitle)}}</dc:title>
+                    {{creatorEntries}}
+                    <dc:identifier id="BookId">{{EscapeXml(safeIdentifier)}}</dc:identifier>
+                    <dc:language>{{EscapeXml(safeLanguage)}}</dc:language>
+                    <dc:description>{{EscapeXml(safeDescription)}}</dc:description>
                   </metadata>
                   <manifest>
                     <item id="chapter1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
@@ -185,12 +338,17 @@ internal static class TestDocumentFactory
                 </package>
                 """);
             AddEntry(archive, "OEBPS/toc.ncx",
-                """
+                $$"""
                 <?xml version="1.0" encoding="UTF-8"?>
                 <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
-                  <head><meta name="dtb:uid" content="test-book-001"/></head>
-                  <docTitle><text>Test Book</text></docTitle>
-                  <navMap/>
+                  <head><meta name="dtb:uid" content="{{EscapeXml(safeIdentifier)}}"/></head>
+                  <docTitle><text>{{EscapeXml(safeTitle)}}</text></docTitle>
+                  <navMap>
+                    <navPoint id="navpoint-1" playOrder="1">
+                      <navLabel><text>Chapter One</text></navLabel>
+                      <content src="chapter1.xhtml"/>
+                    </navPoint>
+                  </navMap>
                 </ncx>
                 """);
             AddEntry(archive, "OEBPS/chapter1.xhtml",
@@ -205,6 +363,9 @@ internal static class TestDocumentFactory
         ms.Position = 0;
         return ms;
     }
+
+    private static string EscapeXml(string value) =>
+        System.Security.SecurityElement.Escape(value) ?? string.Empty;
 
     /// <summary>Creates a minimal single-page PDF with no content (blank page).</summary>
     internal static MemoryStream CreatePdfStream()
@@ -274,7 +435,7 @@ internal static class TestDocumentFactory
         string title = "Test Book",
         string bodyHtml = "<html><head><title>Test Book</title></head><body><h1>Hello MOBI</h1><p>Test content.</p></body></html>")
     {
-        var titleBytes   = Encoding.UTF8.GetBytes(title);
+        var titleBytes = Encoding.UTF8.GetBytes(title);
         var contentBytes = Encoding.UTF8.GetBytes(bodyHtml);
 
         // Fixed layout (2 records: header record + 1 text record):
@@ -283,12 +444,12 @@ internal static class TestDocumentFactory
         //   [94-95]  2-byte gap
         //   [96 ..]  Record 0: PalmDoc header (16) + MOBI header (232) + FullName
         //   [96+248+titleLen ..] Record 1: raw content bytes
-        const int record0Start   = 96;
+        const int record0Start = 96;
         const int fullNameOffset = 248; // 16 (PalmDoc) + 232 (MOBI)
 
-        var record0Size  = fullNameOffset + titleBytes.Length;
+        var record0Size = fullNameOffset + titleBytes.Length;
         var record1Start = record0Start + record0Size;
-        var totalSize    = record1Start + contentBytes.Length;
+        var totalSize = record1Start + contentBytes.Length;
 
         var buf = new byte[totalSize];
 
@@ -340,7 +501,7 @@ internal static class TestDocumentFactory
 
     private static void WriteU32BE(byte[] buf, int offset, uint value)
     {
-        buf[offset]     = (byte)(value >> 24);
+        buf[offset] = (byte)(value >> 24);
         buf[offset + 1] = (byte)(value >> 16);
         buf[offset + 2] = (byte)(value >> 8);
         buf[offset + 3] = (byte)value;
@@ -348,7 +509,7 @@ internal static class TestDocumentFactory
 
     private static void WriteU16BE(byte[] buf, int offset, ushort value)
     {
-        buf[offset]     = (byte)(value >> 8);
+        buf[offset] = (byte)(value >> 8);
         buf[offset + 1] = (byte)value;
     }
 
@@ -359,6 +520,13 @@ internal static class TestDocumentFactory
         writer.Write(content);
     }
 
+    private static void AddEntry(ZipArchive archive, string name, byte[] content)
+    {
+        var entry = archive.CreateEntry(name);
+        using var stream = entry.Open();
+        stream.Write(content, 0, content.Length);
+    }
+
     // ── CHM ──────────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -366,12 +534,12 @@ internal static class TestDocumentFactory
     /// section 0 — uncompressed) so that the CHM converter tests have no LZX dependency.
     /// </summary>
     internal static MemoryStream CreateChmStream(
-        string title   = "Test CHM",
+        string title = "Test CHM",
         string bodyHtml = "<html><head><title>Test CHM</title></head><body><h1>Hello CHM</h1><p>CHM content.</p></body></html>")
     {
         // ── Encode all the data we'll need ────────────────────────────────────
-        var titleBytes   = Encoding.Default.GetBytes(title + "\0");
-        var htmlBytes    = Encoding.UTF8.GetBytes(bodyHtml);
+        var titleBytes = Encoding.Default.GetBytes(title + "\0");
+        var htmlBytes = Encoding.UTF8.GetBytes(bodyHtml);
         var htmlFilePath = "/index.html";
         var htmlPathBytes = Encoding.UTF8.GetBytes(htmlFilePath);
 
@@ -388,31 +556,29 @@ internal static class TestDocumentFactory
         // Both files go in section 0.
         // After the section-0 area header (ITSF section table), section-0 starts at a fixed offset.
         // For simplicity we'll compute everything and lay it out linearly.
-        const long htmlOffset   = 0;           // offset within section 0
-        long       htmlLen      = htmlBytes.Length;
-        long       sysOffset    = htmlLen;     // immediately after HTML
-        long       sysLen       = sysData.Length;
+        const long htmlOffset = 0;           // offset within section 0
+        long htmlLen = htmlBytes.Length;
+        long sysOffset = htmlLen;     // immediately after HTML
+        long sysLen = sysData.Length;
 
         byte[] entry1 = BuildPmglEntry("#SYSTEM", 0, sysOffset, sysLen);
         byte[] entry2 = BuildPmglEntry(htmlFilePath, 0, htmlOffset, htmlLen);
         int entriesLen = entry1.Length + entry2.Length;
 
         // ── ITSP PMGL block ────────────────────────────────────────────────────
-        const int blockSize   = 0x1000; // 4 KB
-        const int pmglHdrSize = 20;
+        const int blockSize = 0x1000; // 4 KB
         // Quick-ref section: 2 bytes (entry count) at the very end; so quickRefSize = 2.
         const int quickRefSize = 2;
-        int  dataAreaSize = blockSize - pmglHdrSize - quickRefSize - 2;
 
         var pmglBlock = new byte[blockSize];
         // PMGL signature
         pmglBlock[0] = (byte)'P'; pmglBlock[1] = (byte)'M'; pmglBlock[2] = (byte)'G'; pmglBlock[3] = (byte)'L';
-        WriteU32LE(pmglBlock, 4,  (uint)quickRefSize);     // quick-ref section size
-        WriteU32LE(pmglBlock, 8,  0);                      // reserved
+        WriteU32LE(pmglBlock, 4, (uint)quickRefSize);     // quick-ref section size
+        WriteU32LE(pmglBlock, 8, 0);                      // reserved
         WriteI32LE(pmglBlock, 12, -1);                     // prev block = none
         WriteI32LE(pmglBlock, 16, -1);                     // next block = none
         // Entries starting at offset 20
-        Array.Copy(entry1, 0, pmglBlock, 20,              entry1.Length);
+        Array.Copy(entry1, 0, pmglBlock, 20, entry1.Length);
         Array.Copy(entry2, 0, pmglBlock, 20 + entry1.Length, entry2.Length);
         // quick-ref tail: 2-byte count
         pmglBlock[blockSize - 2] = 2; pmglBlock[blockSize - 1] = 0;
@@ -435,8 +601,8 @@ internal static class TestDocumentFactory
         const int itspHdrSize = 84;
         var itspHdr = new byte[itspHdrSize];
         itspHdr[0] = (byte)'I'; itspHdr[1] = (byte)'T'; itspHdr[2] = (byte)'S'; itspHdr[3] = (byte)'P';
-        WriteU32LE(itspHdr,  4, 1);               // version
-        WriteU32LE(itspHdr,  8, itspHdrSize);      // header size
+        WriteU32LE(itspHdr, 4, 1);               // version
+        WriteU32LE(itspHdr, 8, itspHdrSize);      // header size
         WriteU32LE(itspHdr, 12, 0);                // unknown
         WriteU32LE(itspHdr, 16, (uint)blockSize);  // chunk size
         WriteU32LE(itspHdr, 20, 2);                // quick-ref density
@@ -454,16 +620,16 @@ internal static class TestDocumentFactory
         //   [0..95]   ITSF header (96 bytes for v3)
         //   [96..95+itspHdrSize+blockSize-1]  Directory (ITSP + PMGL blocks)
         //   [above]   Section 0 content (HTML, then #SYSTEM)
-        const int itsfHdrSize  = 96;
-        long directoryOffset   = itsfHdrSize;
-        long directorySize     = itspHdrSize + blockSize;
-        long section0Offset    = directoryOffset + directorySize;  // section 0 immediately follows directory
-        long section0Size      = htmlLen + sysLen;
+        const int itsfHdrSize = 96;
+        long directoryOffset = itsfHdrSize;
+        long directorySize = itspHdrSize + blockSize;
+        long section0Offset = directoryOffset + directorySize;  // section 0 immediately follows directory
+        long section0Size = htmlLen + sysLen;
 
         var itsf = new byte[itsfHdrSize];
         itsf[0] = (byte)'I'; itsf[1] = (byte)'T'; itsf[2] = (byte)'S'; itsf[3] = (byte)'F';
-        WriteU32LE(itsf,  4, 3);                                 // version 3
-        WriteU32LE(itsf,  8, itsfHdrSize);                       // header size
+        WriteU32LE(itsf, 4, 3);                                 // version 3
+        WriteU32LE(itsf, 8, itsfHdrSize);                       // header size
         WriteU32LE(itsf, 12, 0);                                 // unknown
         WriteU32LE(itsf, 16, 0);                                 // timestamp
         WriteU32LE(itsf, 20, 0x0409);                            // language (en-US)
@@ -519,15 +685,15 @@ internal static class TestDocumentFactory
 
     private static void WriteU32LE(byte[] buf, int offset, uint value)
     {
-        buf[offset]     = (byte)(value & 0xFF);
-        buf[offset + 1] = (byte)((value >> 8)  & 0xFF);
+        buf[offset] = (byte)(value & 0xFF);
+        buf[offset + 1] = (byte)((value >> 8) & 0xFF);
         buf[offset + 2] = (byte)((value >> 16) & 0xFF);
         buf[offset + 3] = (byte)((value >> 24) & 0xFF);
     }
 
     private static void WriteU16LE(byte[] buf, int offset, ushort value)
     {
-        buf[offset]     = (byte)(value & 0xFF);
+        buf[offset] = (byte)(value & 0xFF);
         buf[offset + 1] = (byte)((value >> 8) & 0xFF);
     }
 
@@ -536,7 +702,44 @@ internal static class TestDocumentFactory
 
     private static void WriteI64LE(byte[] buf, int offset, long value)
     {
-        WriteU32LE(buf, offset,     (uint)(value & 0xFFFFFFFF));
+        WriteU32LE(buf, offset, (uint)(value & 0xFFFFFFFF));
         WriteU32LE(buf, offset + 4, (uint)((value >> 32) & 0xFFFFFFFF));
     }
+
+    /// <summary>
+    /// Creates a minimal Wikipedia-like HTML stream with a title span, content div,
+    /// and navigation chrome that should be excluded from conversion output.
+    /// </summary>
+    internal static MemoryStream CreateWikipediaHtmlStream()
+    {
+        const string html = """
+            <html>
+            <head><title>Cat - Wikipedia</title></head>
+            <body>
+            <nav id="mw-navigation">Navigation chrome that should not appear</nav>
+            <h1 class="firstHeading"><span class="mw-page-title-main">Cat</span></h1>
+            <div id="mw-content-text">
+                <p>The cat is a domestic species of small carnivorous mammal.</p>
+            </div>
+            <footer>Footer chrome that should not appear</footer>
+            </body>
+            </html>
+            """;
+        return new MemoryStream(Encoding.UTF8.GetBytes(html));
+    }
+
+    /// <summary>Creates plain HTML without any Wikipedia-specific structure.</summary>
+    internal static MemoryStream CreateGenericHtmlStream()
+    {
+        const string html = """
+            <html>
+            <head><title>Generic Page</title></head>
+            <body><p>Some generic content.</p></body>
+            </html>
+            """;
+        return new MemoryStream(Encoding.UTF8.GetBytes(html));
+    }
 }
+
+
+

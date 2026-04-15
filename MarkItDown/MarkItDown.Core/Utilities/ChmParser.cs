@@ -25,18 +25,18 @@ internal sealed class ChmParser
 
     // ITSP directory info.
     private long _directoryOffset;
-    private int  _blockSize;
-    private int  _firstPmglBlock;
+    private int _blockSize;
+    private int _firstPmglBlock;
 
     // Directory: maps lower-case file path → (section, offset, length).
     private readonly Dictionary<string, ChmEntry> _files = new(StringComparer.OrdinalIgnoreCase);
 
     // LZX decompression parameters (populated lazily on first section-1 read).
-    private int    _windowBits;
-    private long   _totalUncompressedSize;
-    private long   _resetIntervalSize;
+    private int _windowBits;
+    private long _totalUncompressedSize;
+    private long _resetIntervalSize;
     private long[] _compressedOffsets = [];
-    private bool   _lzxReady;
+    private bool _lzxReady;
     private byte[]? _decompressedSection1;
 
     // ── Constructor ───────────────────────────────────────────────────────────
@@ -111,7 +111,7 @@ internal sealed class ChmParser
         //   [80..87] = length of the ITSP directory
         //   [88..95] = content (section-0) start offset  [v3 only]
         long dirOffset = ReadI64(_data, 72);
-        long dirLen    = ReadI64(_data, 80);
+        long dirLen = ReadI64(_data, 80);
 
         _directoryOffset = dirOffset;
 
@@ -131,7 +131,7 @@ internal sealed class ChmParser
             throw new InvalidDataException("ITSP directory header not found.");
 
         // version = ReadI32(_data, at + 4); // typically 1
-        _blockSize      = ReadI32(_data, at + 16);
+        _blockSize = ReadI32(_data, at + 16);
         _firstPmglBlock = ReadI32(_data, at + 32);  // first PMGL leaf block index (+28 is the PMGI root)
 
         // Blocks start immediately after the 84-byte ITSP header.
@@ -151,11 +151,11 @@ internal sealed class ChmParser
                 break;
 
             int quickRefSize = ReadI32(_data, blockStart + 4);
-            int nextBlock    = ReadI32(_data, blockStart + 16);  // +12 = prev chunk, +16 = next chunk
+            int nextBlock = ReadI32(_data, blockStart + 16);  // +12 = prev chunk, +16 = next chunk
             // 16-byte PMGL header; entries start at blockStart + 20.
             // Quick-ref section occupies the last `quickRefSize + 2` bytes of the block.
             int dataEnd = blockStart + _blockSize - quickRefSize - 2;
-            int pos     = blockStart + 20;
+            int pos = blockStart + 20;
 
             while (pos < dataEnd)
             {
@@ -191,7 +191,7 @@ internal sealed class ChmParser
         int pos = 4;
         while (pos + 4 <= systemBytes.Length)
         {
-            int tag    = ReadU16(systemBytes, pos);
+            int tag = ReadU16(systemBytes, pos);
             int length = ReadU16(systemBytes, pos + 2);
             pos += 4;
 
@@ -201,7 +201,7 @@ internal sealed class ChmParser
             {
                 // Null-terminated ANSI string.
                 int nullIdx = Array.IndexOf(systemBytes, (byte)0, pos, length);
-                int strLen  = nullIdx >= 0 ? nullIdx - pos : length;
+                int strLen = nullIdx >= 0 ? nullIdx - pos : length;
                 return Encoding.Default.GetString(systemBytes, pos, strLen);
             }
 
@@ -216,7 +216,7 @@ internal sealed class ChmParser
     private byte[] ReadSection0(long offset, long length)
     {
         long start = _section0Offset + offset;
-        int  len   = (int)Math.Min(length, _data.Length - start);
+        int len = (int)Math.Min(length, _data.Length - start);
         if (len <= 0) return [];
 
         var result = new byte[len];
@@ -260,7 +260,7 @@ internal sealed class ChmParser
         if (ctrl is not null && ctrl.Length >= 20 && StartsWith(ctrl, 4, LzxcMagic))
         {
             int resetIntervalBlocks = ReadI32(ctrl, 12);
-            int windowSizeBlocks    = ReadI32(ctrl, 16);
+            int windowSizeBlocks = ReadI32(ctrl, 16);
 
             // Convert to bytes: multiply by 0x8000 = 32768.
             _resetIntervalSize = (long)resetIntervalBlocks * 0x8000;
@@ -276,23 +276,23 @@ internal sealed class ChmParser
         else
         {
             // Fallback: common defaults.
-            _windowBits        = 16;
+            _windowBits = 16;
             _resetIntervalSize = 0x8000;
         }
 
         // Read ResetTable. The GUID in the Transform path varies across CHM files,
         // so locate the entry dynamically instead of using a hardcoded path.
-        const string resetTableSuffix  = "/InstanceData/ResetTable";
-        const string transformPrefix   = "::DataSpace/Storage/MSCompressed/Transform/";
+        const string resetTableSuffix = "/InstanceData/ResetTable";
+        const string transformPrefix = "::DataSpace/Storage/MSCompressed/Transform/";
         string? resetTablePath = _files.Keys.FirstOrDefault(k =>
-            k.StartsWith(transformPrefix,    StringComparison.OrdinalIgnoreCase) &&
-            k.EndsWith(resetTableSuffix,     StringComparison.OrdinalIgnoreCase));
+            k.StartsWith(transformPrefix, StringComparison.OrdinalIgnoreCase) &&
+            k.EndsWith(resetTableSuffix, StringComparison.OrdinalIgnoreCase));
 
         var rt = resetTablePath is not null ? ReadFile(resetTablePath) : null;
         if (rt is not null && rt.Length >= 28)
         {
             // version     = ReadI32(rt, 0);  // 2
-            int    numEntries   = ReadI32(rt, 4);
+            int numEntries = ReadI32(rt, 4);
             // entrySize   = ReadI32(rt, 8);  // 8
             // tableOffset = ReadI32(rt, 12); // offset to first entry (usually 40)
             _totalUncompressedSize = ReadI64(rt, 16);
@@ -313,7 +313,7 @@ internal sealed class ChmParser
         else
         {
             _totalUncompressedSize = 0;
-            _compressedOffsets     = [];
+            _compressedOffsets = [];
         }
 
         _lzxReady = true;

@@ -3,6 +3,7 @@ using MarkItDown.Core.Exceptions;
 using MarkItDown.Core.Models;
 using MarkItDown.Core.Utilities;
 using System.Net.Http.Headers;
+using System.Text;
 
 namespace MarkItDown.Core;
 
@@ -18,6 +19,8 @@ public sealed class MarkItDownService : IDisposable
 
     public MarkItDownService(HttpClient? httpClient = null)
     {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+
         _ownsHttpClient = httpClient is null;
         _httpClient = httpClient ?? new HttpClient();
 

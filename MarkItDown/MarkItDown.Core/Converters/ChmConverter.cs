@@ -32,7 +32,7 @@ public sealed class ChmConverter : DocumentConverter
         CancellationToken cancellationToken = default)
     {
         var data = await ReadAllBytesAsync(stream, cancellationToken);
-        var chm  = ChmParser.Parse(data);
+        var chm = ChmParser.Parse(data);
 
         var htmlFiles = GetReadingOrder(chm).ToList();
         if (htmlFiles.Count == 0)
@@ -45,7 +45,7 @@ public sealed class ChmConverter : DocumentConverter
             if (bytes is null || bytes.Length == 0)
                 continue;
 
-            var html     = DetectAndDecode(bytes);
+            var html = DetectAndDecode(bytes);
             var markdown = HtmlMarkdownConverter.Convert(html).Markdown;
             if (string.IsNullOrWhiteSpace(markdown))
                 continue;
@@ -107,9 +107,9 @@ public sealed class ChmConverter : DocumentConverter
     /// <summary>Extracts local file paths from an HHC (HTML Help Contents) file.</summary>
     private static List<string> ParseHhcOrder(byte[] hhcBytes, ChmParser chm)
     {
-        var html   = DetectAndDecode(hhcBytes);
-        var paths  = new List<string>();
-        var seen   = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var html = DetectAndDecode(hhcBytes);
+        var paths = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         // HHC is HTML with <param name="Local" value="..."> entries.
         int idx = 0;

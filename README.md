@@ -21,6 +21,15 @@ Each experiment is intentionally isolated, self‑contained, and free to evolve 
 
 ---
 
+## 📦 Projects
+
+| Project | Description | Status |
+|---|---|---|
+| [`MarkItDown`](MarkItDown/README.md) | C#/.NET 10 port of Microsoft's [markitdown](https://github.com/microsoft/markitdown) — converts documents and URLs to Markdown with Native AOT support and an MCP server | Active |
+| [`MarkItDown/MarkItDown.Cli`](MarkItDown/MarkItDown.Cli/README.md) | CLI + MCP server — self-contained Native AOT binary (~65 MB) | Active |
+
+---
+
 ## ⚠️ Disclaimer
 
 This repository contains **experimental** and **non‑production** code.  
