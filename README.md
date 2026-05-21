@@ -27,6 +27,8 @@ Each experiment is intentionally isolated, self‑contained, and free to evolve 
 |---|---|---|
 | [`MarkItDown`](MarkItDown/README.md) | C#/.NET 10 port of Microsoft's [markitdown](https://github.com/microsoft/markitdown) — converts documents and URLs to Markdown with Native AOT support and an MCP server | Active |
 | [`MarkItDown/MarkItDown.Cli`](MarkItDown/MarkItDown.Cli/README.md) | CLI + MCP server — self-contained Native AOT binary (~65 MB) | Active |
+| [`EbookScanner`](EbookScanner/README.md) | .NET 10 solution for scanning a file system for PDF, EPUB, MOBI, and CHM files and extracting their metadata into a Markdown or JSON catalog; includes an MCP server | Active |
+| [`TurboVector`](TurboVector/README.md) | C#/.NET 10 port of [turbovec](https://github.com/RyanCodrai/turbovec) — a RaBitQ/TurboQuant vector quantization library for high-dimensional approximate nearest-neighbour search with SIMD-accelerated scoring | Active |
 
 ---
 
