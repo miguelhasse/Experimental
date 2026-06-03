@@ -1,0 +1,609 @@
+@page "/notifications"
+@rendermode InteractiveServer
+@inject NotificationService NotificationService
+@inject JobService JobService
+@implements IDisposable
+
+@using System.ComponentModel.DataAnnotations
+@using RequestProcessor
+
+<PageTitle>Notifications</PageTitle>
+
+<!-- ── Page header ──────────────────────────────────────────────────────── -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="mb-0">Notifications</h2>
+    <div class="d-flex align-items-center gap-3">
+        <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" role="switch" id="autoRefreshSwitch"
+                   checked="@_autoRefresh" @onchange="ToggleAutoRefresh" />
+            <label class="form-check-label text-muted small" for="autoRefreshSwitch">
+                Auto-refresh
+            </label>
+        </div>
+        <button class="btn btn-sm btn-outline-danger" @onclick="RemoveAll"
+                disabled="@(!_notifications.Any(IsRemovable))" title="Remove all completed entries">
+            🗑 Remove All
+        </button>
+        <button class="btn btn-sm btn-outline-secondary" @onclick="ManualRefreshAsync"
+                disabled="@_refreshing" title="Refresh channel statuses">
+            @if (_refreshing)
+            {
+                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+            }
+            else
+            {
+                <span>↺ Refresh</span>
+            }
+        </button>
+    </div>
+</div>
+
+<!-- ── Generate Batch / Pool Stats tabs─────────────────────────────────── -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header p-0">
+        <ul class="nav nav-tabs card-header-tabs px-3" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link @(_activeTab == Tab.Generate ? "active" : "")"
+                        @onclick='() => _activeTab = Tab.Generate' type="button" role="tab">
+                    Generate Batch
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link @(_activeTab == Tab.Stats ? "active" : "")"
+                        @onclick='() => _activeTab = Tab.Stats' type="button" role="tab">
+                    Pool Stats
+                </button>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body">
+
+        @if (_activeTab == Tab.Generate)
+        {
+            <!-- ── Generate Batch form ─────────────────────────────────────────── -->
+            <EditForm Model="_batchForm" OnValidSubmit="CreateBatchAsync" FormName="generate-batch">
+                <DataAnnotationsValidator />
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label">
+                            Count
+                            <span class="text-muted fw-normal small">— number of grains to create (1–50)</span>
+                        </label>
+                        <InputNumber class="form-control" @bind-Value="_batchForm.Count" min="1" max="50" />
+                        <ValidationMessage For="() => _batchForm.Count" class="text-danger small" />
+                    </div>
+                    <div class="col-md-3">
+                        <button type="submit" class="btn btn-primary w-100" disabled="@_creating">
+                            @if (_creating)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"
+                                      role="status" aria-hidden="true"></span>
+                                <span>Generating…</span>
+                            }
+                            else
+                            {
+                                <span>Generate</span>
+                            }
+                        </button>
+                    </div>
+                </div>
+                @if (_batchSuccess is not null)
+                {
+                    <div class="alert alert-success mt-3 mb-0 py-2 small">@_batchSuccess</div>
+                }
+                @if (_createError is not null)
+                {
+                    <div class="alert alert-danger mt-3 mb-0 py-2 small">@_createError</div>
+                }
+            </EditForm>
+        }
+        else
+        {
+            <!-- ── Pool Stats ──────────────────────────────────────────────────── -->
+            @if (_statsError is not null)
+            {
+                <div class="alert alert-danger py-2 small mb-0">
+                    Could not load pool stats: @_statsError
+                </div>
+            }
+            else if (_stats is null)
+            {
+                <div class="text-muted small">Loading…</div>
+            }
+            else
+            {
+                var s = _stats;
+                <div class="row g-3">
+
+                    <!-- Workers -->
+                    <div class="col-12">
+                        <div class="fw-semibold text-muted small text-uppercase mb-2" style="letter-spacing:.05em">Workers</div>
+                        <div class="row g-2">
+                            <div class="col-6 col-sm-3">
+                                <div class="card text-center border-0 bg-light h-100">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="fs-4 fw-bold text-info">@s.SiloCount</div>
+                                        <div class="text-muted small">Silos</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-sm-3">
+                                <div class="card text-center border-0 bg-light h-100">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="fs-4 fw-bold text-primary">@s.ActiveWorkers</div>
+                                        <div class="text-muted small">Active</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-sm-3">
+                                <div class="card text-center border-0 bg-light h-100">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="fs-4 fw-bold">@s.MaxConcurrency</div>
+                                        <div class="text-muted small">Max Concurrency</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-sm-3">
+                                <div class="card text-center border-0 bg-light h-100">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="fs-4 fw-bold">@s.BoundedCapacity</div>
+                                        <div class="text-muted small">Capacity / Priority</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Queue depth -->
+                    <div class="col-12">
+                        <div class="fw-semibold text-muted small text-uppercase mb-2" style="letter-spacing:.05em">Queue Depth</div>
+                        <div class="row g-2">
+                            <div class="col-6 col-sm-3">
+                                <div class="card text-center border-0 bg-light h-100">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="fs-4 fw-bold text-danger">@s.QueueDepthHigh</div>
+                                        <div class="text-muted small">High</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-sm-3">
+                                <div class="card text-center border-0 bg-light h-100">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="fs-4 fw-bold text-warning">@s.QueueDepthNormal</div>
+                                        <div class="text-muted small">Normal</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-sm-3">
+                                <div class="card text-center border-0 bg-light h-100">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="fs-4 fw-bold text-secondary">@s.QueueDepthLow</div>
+                                        <div class="text-muted small">Low</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-sm-3">
+                                <div class="card text-center border-0 bg-light h-100">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="fs-4 fw-bold">@s.TotalQueueDepth</div>
+                                        <div class="text-muted small">Total</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Cumulative counts -->
+                    <div class="col-12">
+                        <div class="fw-semibold text-muted small text-uppercase mb-2" style="letter-spacing:.05em">Cumulative</div>
+                        <div class="row g-2">
+                            <div class="col-6 col-sm-3">
+                                <div class="card text-center border-0 bg-light h-100">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="fs-4 fw-bold">@s.TotalEnqueued</div>
+                                        <div class="text-muted small">Enqueued</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-sm-3">
+                                <div class="card text-center border-0 bg-light h-100">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="fs-4 fw-bold text-success">@s.TotalCompleted</div>
+                                        <div class="text-muted small">Completed</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-sm-3">
+                                <div class="card text-center border-0 bg-light h-100">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="fs-4 fw-bold text-danger">@s.TotalFailed</div>
+                                        <div class="text-muted small">Failed</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-sm-3">
+                                <div class="card text-center border-0 bg-light h-100">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="fs-4 fw-bold text-warning">@s.TotalCancelled</div>
+                                        <div class="text-muted small">Cancelled</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            }
+        }
+
+    </div>
+</div>
+
+<!-- ── Notifications table ──────────────────────────────────────────────── -->
+<div class="card shadow-sm">
+    <div class="card-header fw-semibold d-flex align-items-center gap-2">
+        <span>Notification Grains</span>
+        <span class="badge bg-secondary rounded-pill">@_notifications.Count</span>
+        @if (_notifications.Count > 0)
+        {
+            <button class="btn btn-sm btn-outline-danger ms-auto"
+                    @onclick="CancelAllPendingAsync"
+                    disabled="@_cancellingAll"
+                    title="Cancel all queued (not yet dispatched) channels">
+                @if (_cancellingAll)
+                {
+                    <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                    <span>Cancelling…</span>
+                }
+                else
+                {
+                    <span>Cancel All Pending</span>
+                }
+            </button>
+        }
+    </div>
+    <div class="card-body p-0">
+        @if (_notifications.Count == 0)
+        {
+            <div class="text-center text-muted py-5">
+                <div class="fs-1 mb-2">🔔</div>
+                <div>No notifications yet — generate a batch above to get started.</div>
+                <div class="small mt-1 text-muted">IDs are auto-generated; all three channels are dispatched immediately.</div>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:25%">Notification ID</th>
+                            <th style="width:9%">Created</th>
+                            <th style="width:18%">
+                                <i class="bi bi-envelope me-1"></i>Email
+                            </th>
+                            <th style="width:18%">
+                                <i class="bi bi-phone me-1"></i>SMS
+                            </th>
+                            <th style="width:18%">
+                                <i class="bi bi-bell me-1"></i>Push
+                            </th>
+                            <th style="width:12%" class="text-end pe-3">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var n in _notifications)
+                        {
+                            <tr>
+                                <td class="font-monospace" style="font-size:0.85rem">@n.Id</td>
+                                <td class="text-muted" style="font-size:0.82rem">
+                                    @n.CreatedAt.LocalDateTime.ToString("HH:mm:ss")
+                                </td>
+
+                                <!-- Email channel -->
+                                <td>
+                                    @RenderChannelCell(n.Id, n.EmailStatus, n.EmailProgress, "email",
+                                        () => SendEmailAsync(n.Id))
+                                </td>
+
+                                <!-- SMS channel -->
+                                <td>
+                                    @RenderChannelCell(n.Id, n.SmsStatus, n.SmsProgress, "sms",
+                                        () => SendSmsAsync(n.Id))
+                                </td>
+
+                                <!-- Push channel -->
+                                <td>
+                                    @RenderChannelCell(n.Id, n.PushStatus, n.PushProgress, "push",
+                                        () => SendPushAsync(n.Id))
+                                </td>
+
+                                <!-- Actions -->
+                                <td class="text-end pe-3">
+                                    <div class="d-flex gap-1 justify-content-end">
+                                        @if (HasDispatchable(n))
+                                        {
+                                            <button class="btn btn-sm btn-outline-primary"
+                                                    @onclick="() => SendAllAsync(n.Id)"
+                                                    title="Dispatch all pending/failed channels">
+                                                All
+                                            </button>
+                                        }
+                                        @if (IsRemovable(n))
+                                        {
+                                            <button class="btn btn-sm btn-outline-secondary"
+                                                    @onclick="() => Remove(n.Id)">
+                                                Remove
+                                            </button>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    // ── Tab enum ──────────────────────────────────────────────────────────────
+
+    private enum Tab { Generate, Stats }
+
+    // ── Form model ────────────────────────────────────────────────────────────
+
+    private sealed class BatchForm
+    {
+        [Range(1, 50, ErrorMessage = "Count must be between 1 and 50.")]
+        public int Count { get; set; } = 5;
+    }
+
+    // ── State ─────────────────────────────────────────────────────────────────
+
+    private Tab    _activeTab = Tab.Generate;
+    private BatchForm  _batchForm = new();
+    private IReadOnlyList<NotificationService.NotificationEntry> _notifications = [];
+    private bool   _creating;
+    private bool   _refreshing;
+    private bool   _cancellingAll;
+    private bool   _autoRefresh = true;
+    private string? _createError;
+    private string? _batchSuccess;
+    private Timer?  _refreshTimer;
+    private RequestPoolStatsSnapshot? _stats;
+    private string? _statsError;
+
+    // Per-row busy flags so buttons don't interfere with each other.
+    private readonly HashSet<string> _busyChannels = [];
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        _refreshTimer = new Timer(OnTimerTick, null,
+            TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(500));
+        await RefreshAsync();
+    }
+
+    private void OnTimerTick(object? _)
+    {
+        if (!_autoRefresh) return;
+        InvokeAsync(async () =>
+        {
+            await RefreshAsync();
+            StateHasChanged();
+        });
+    }
+
+    // ── Actions ───────────────────────────────────────────────────────────────
+
+    private async Task ManualRefreshAsync() => await RefreshAsync();
+
+    private async Task RefreshAsync()
+    {
+        if (_refreshing) return;
+        _refreshing = true;
+        try
+        {
+            await NotificationService.RefreshAllAsync();
+            _notifications = NotificationService.Notifications;
+            _batchSuccess = null;
+
+            var snap = await JobService.GetPoolStatsAsync();
+            if (snap is not null)
+            {
+                _stats = snap;
+                _statsError = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            _statsError = ex.Message;
+        }
+        finally { _refreshing = false; }
+    }
+
+    private async Task CreateBatchAsync()
+    {
+        _creating     = true;
+        _createError  = null;
+        _batchSuccess = null;
+        try
+        {
+            var ids = await NotificationService.CreateBatchAsync(_batchForm.Count);
+            _notifications = NotificationService.Notifications;
+            _batchSuccess = $"Created {ids.Count} notification{(ids.Count == 1 ? "" : "s")} and dispatched all channels.";
+        }
+        catch (Exception ex)
+        {
+            _createError = $"Failed to generate batch: {ex.Message}";
+        }
+        finally { _creating = false; }
+    }
+
+    private async Task SendEmailAsync(string id)
+    {
+        var key = $"{id}:email";
+        if (!_busyChannels.Add(key)) return;
+        try
+        {
+            await NotificationService.SendEmailAsync(id);
+            _notifications = NotificationService.Notifications;
+        }
+        catch (Exception ex) { _createError = ex.Message; }
+        finally { _busyChannels.Remove(key); }
+    }
+
+    private async Task SendSmsAsync(string id)
+    {
+        var key = $"{id}:sms";
+        if (!_busyChannels.Add(key)) return;
+        try
+        {
+            await NotificationService.SendSmsAsync(id);
+            _notifications = NotificationService.Notifications;
+        }
+        catch (Exception ex) { _createError = ex.Message; }
+        finally { _busyChannels.Remove(key); }
+    }
+
+    private async Task SendPushAsync(string id)
+    {
+        var key = $"{id}:push";
+        if (!_busyChannels.Add(key)) return;
+        try
+        {
+            await NotificationService.SendPushAsync(id);
+            _notifications = NotificationService.Notifications;
+        }
+        catch (Exception ex) { _createError = ex.Message; }
+        finally { _busyChannels.Remove(key); }
+    }
+
+    private async Task SendAllAsync(string id)
+    {
+        _createError = null;
+        try
+        {
+            await NotificationService.SendAllAsync(id);
+            _notifications = NotificationService.Notifications;
+        }
+        catch (Exception ex) { _createError = ex.Message; }
+    }
+
+    private void Remove(string id)
+    {
+        NotificationService.Remove(id);
+        _notifications = NotificationService.Notifications;
+    }
+
+    private void RemoveAll()
+    {
+        NotificationService.RemoveAll();
+        _notifications = NotificationService.Notifications;
+    }
+
+    private async Task CancelAllPendingAsync()
+    {
+        _cancellingAll = true;
+        try
+        {
+            await NotificationService.CancelAllPendingAsync();
+            _notifications = NotificationService.Notifications;
+        }
+        catch (Exception ex) { _createError = ex.Message; }
+        finally { _cancellingAll = false; }
+    }
+
+    private void ToggleAutoRefresh(ChangeEventArgs e) => _autoRefresh = e.Value is true;
+
+    // ── Render helpers ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Renders a channel table cell: status badge plus an optional Send button
+    /// when the channel has not yet been dispatched or has failed.
+    /// </summary>
+    private RenderFragment RenderChannelCell(
+        string id, JobStatus status, JobProgressSnapshot? progress, string channel, Func<Task> sendAction) =>
+        @<div class="d-flex flex-column gap-1">
+            <span class="badge @StatusBadgeClass(status)" style="font-size:0.75rem">
+                @status
+            </span>
+            @if (status == JobStatus.Processing && progress is not null)
+            {
+                var pct = progress.PercentComplete;
+                <div class="progress" style="height:4px" title="@pct%">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated"
+                         role="progressbar"
+                         style="width:@(pct)%"
+                         aria-valuenow="@pct"
+                         aria-valuemin="0"
+                         aria-valuemax="100">
+                    </div>
+                </div>
+                @if (progress.Message is not null)
+                {
+                    <div class="text-muted" style="font-size:0.7rem; line-height:1.2">@progress.Message</div>
+                }
+            }
+            else if (status != JobStatus.Processing && progress is not null)
+            {
+                var pct = progress.PercentComplete;
+                <div class="progress" style="height:4px" title="@pct%">
+                    <div class="progress-bar @(status == JobStatus.Completed ? "bg-success" : status == JobStatus.Failed ? "bg-danger" : "bg-warning")"
+                         role="progressbar"
+                         style="width:@(pct)%"
+                         aria-valuenow="@pct"
+                         aria-valuemin="0"
+                         aria-valuemax="100">
+                    </div>
+                </div>
+                @if (progress.Message is not null)
+                {
+                    <div class="text-muted" style="font-size:0.7rem; line-height:1.2">@progress.Message</div>
+                }
+            }
+            @if (CanDispatch(status))
+            {
+                var key = $"{id}:{channel}";
+                <button class="btn btn-sm btn-outline-secondary py-0"
+                        style="font-size:0.75rem; line-height:1.4"
+                        disabled="@_busyChannels.Contains(key)"
+                        @onclick="sendAction">
+                    @if (_busyChannels.Contains(key))
+                    {
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                    }
+                    else
+                    {
+                        <span>Send</span>
+                    }
+                </button>
+            }
+        </div>;
+
+    private static bool CanDispatch(JobStatus status) => NotificationService.IsRetryable(status);
+
+    private static bool HasDispatchable(NotificationService.NotificationEntry n) =>
+        CanDispatch(n.EmailStatus) || CanDispatch(n.SmsStatus) || CanDispatch(n.PushStatus);
+
+    private static bool IsRemovable(NotificationService.NotificationEntry n) =>
+        !HasDispatchable(n) &&
+        n.EmailStatus is not (JobStatus.Pending or JobStatus.Processing) &&
+        n.SmsStatus   is not (JobStatus.Pending or JobStatus.Processing) &&
+        n.PushStatus  is not (JobStatus.Pending or JobStatus.Processing);
+
+    private static string StatusBadgeClass(JobStatus status) => status switch
+    {
+        JobStatus.Pending    => "bg-secondary",
+        JobStatus.Processing => "bg-primary",
+        JobStatus.Completed  => "bg-success",
+        JobStatus.Failed     => "bg-danger",
+        JobStatus.Cancelled  => "bg-warning text-dark",
+        _                    => "bg-light text-dark border"
+    };
+
+    public void Dispose() => _refreshTimer?.Dispose();
+}

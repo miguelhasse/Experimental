@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 950" font-family="Segoe UI, Arial, sans-serif" font-size="12">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#444"/>
+    </marker>
+    <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#27ae60"/>
+    </marker>
+    <marker id="al" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#a29bfe"/>
+    </marker>
+    <filter id="sh" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="1.5" dy="1.5" stdDeviation="1.5" flood-opacity="0.25"/>
+    </filter>
+    <linearGradient id="p10" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ff7675"/>
+      <stop offset="100%" stop-color="#d63031"/>
+    </linearGradient>
+    <linearGradient id="p20" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#74b9ff"/>
+      <stop offset="100%" stop-color="#0984e3"/>
+    </linearGradient>
+    <linearGradient id="p30" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#a3cb38"/>
+      <stop offset="100%" stop-color="#27ae60"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1400" height="950" fill="#fdfdfd"/>
+
+  <text x="700" y="34" text-anchor="middle" font-size="22" font-weight="700" fill="#2d3436">QueuedTaskScheduler — Two-Pass Quantum Fairness + Reduced Lock Contention</text>
+  <text x="700" y="54" text-anchor="middle" font-size="12" fill="#636e72">Per-priority QueueGroups · per-group locks (P10) · ConcurrentQueue target-scheduler path (P11) · OTel instrumented (F12)</text>
+
+  <!-- Schedulers strip (top) -->
+  <g filter="url(#sh)">
+    <rect x="40" y="90" width="1320" height="120" rx="10" fill="#f5f6fa" stroke="#b2bec3" stroke-width="1.5" stroke-dasharray="6 3"/>
+    <text x="700" y="112" text-anchor="middle" font-weight="700" fill="#2d3436">Priority-scoped TaskSchedulers (returned via ActivateNewQueue(priority))</text>
+
+    <rect x="200" y="130" width="220" height="60" rx="8" fill="url(#p10)"/>
+    <text x="310" y="155" text-anchor="middle" fill="white" font-weight="700">QueuedScheduler P=2 (High)</text>
+    <text x="310" y="175" text-anchor="middle" fill="white" font-size="10">Quantum: 5  ConsecutiveServed</text>
+
+    <rect x="490" y="130" width="220" height="60" rx="8" fill="url(#p20)"/>
+    <text x="600" y="155" text-anchor="middle" fill="white" font-weight="700">QueuedScheduler P=1 (Normal)</text>
+    <text x="600" y="175" text-anchor="middle" fill="white" font-size="10">Quantum: 5  ConsecutiveServed</text>
+
+    <rect x="780" y="130" width="220" height="60" rx="8" fill="url(#p30)"/>
+    <text x="890" y="155" text-anchor="middle" fill="white" font-weight="700">QueuedScheduler P=0 (Low)</text>
+    <text x="890" y="175" text-anchor="middle" fill="white" font-size="10">Quantum: 5  ConsecutiveServed</text>
+  </g>
+
+  <!-- QueueGroups (middle) -->
+  <g filter="url(#sh)">
+    <rect x="40" y="240" width="1320" height="280" rx="10" fill="#f5f6fa" stroke="#0984e3" stroke-width="2"/>
+    <text x="700" y="262" text-anchor="middle" font-weight="700" fill="#2d3436">_queueGroups : SortedList&lt;int priority, QueueGroup&gt;  — lock ONLY for structural mutation (P10)</text>
+
+    <!-- QueueGroup boxes -->
+    <g>
+      <rect x="80" y="285" width="360" height="220" rx="8" fill="#ffffff" stroke="#d63031" stroke-width="2"/>
+      <text x="260" y="305" text-anchor="middle" font-weight="700" fill="#d63031">QueueGroup (priority=2)</text>
+      <text x="100" y="325" font-size="11" fill="#2d3436">SyncRoot · NextQueueIndex · ConsecutiveServed</text>
+      <text x="100" y="343" font-size="11" fill="#2d3436">SearchOrderEnumerator (struct, alloc-free)</text>
+      <rect x="100" y="356" width="320" height="32" rx="4" fill="#fab1a0"/>
+      <text x="260" y="377" text-anchor="middle" font-size="11" fill="#2d3436">Scheduler #0: ConcurrentQueue&lt;Task?&gt;</text>
+      <rect x="100" y="394" width="320" height="32" rx="4" fill="#fab1a0"/>
+      <text x="260" y="415" text-anchor="middle" font-size="11" fill="#2d3436">Scheduler #1: ConcurrentQueue&lt;Task?&gt;</text>
+      <rect x="100" y="432" width="320" height="32" rx="4" fill="#fab1a0"/>
+      <text x="260" y="453" text-anchor="middle" font-size="11" fill="#2d3436">Scheduler #2: ConcurrentQueue&lt;Task?&gt;</text>
+      <text x="100" y="485" font-size="10" fill="#636e72">Round-robin via NextQueueIndex (snapshot at enum start)</text>
+    </g>
+
+    <g>
+      <rect x="500" y="285" width="360" height="220" rx="8" fill="#ffffff" stroke="#0984e3" stroke-width="2"/>
+      <text x="680" y="305" text-anchor="middle" font-weight="700" fill="#0984e3">QueueGroup (priority=1)</text>
+      <text x="520" y="325" font-size="11" fill="#2d3436">SyncRoot · NextQueueIndex · ConsecutiveServed</text>
+      <rect x="520" y="356" width="320" height="32" rx="4" fill="#74b9ff"/>
+      <text x="680" y="377" text-anchor="middle" font-size="11" fill="white">Scheduler #0: ConcurrentQueue&lt;Task?&gt;</text>
+      <rect x="520" y="394" width="320" height="32" rx="4" fill="#74b9ff"/>
+      <text x="680" y="415" text-anchor="middle" font-size="11" fill="white">Scheduler #1: ConcurrentQueue&lt;Task?&gt;</text>
+      <text x="520" y="485" font-size="10" fill="#636e72">Per-group lock only — no global lock during dispatch</text>
+    </g>
+
+    <g>
+      <rect x="920" y="285" width="360" height="220" rx="8" fill="#ffffff" stroke="#27ae60" stroke-width="2"/>
+      <text x="1100" y="305" text-anchor="middle" font-weight="700" fill="#27ae60">QueueGroup (priority=0)</text>
+      <text x="940" y="325" font-size="11" fill="#2d3436">SyncRoot · NextQueueIndex · ConsecutiveServed</text>
+      <rect x="940" y="356" width="320" height="32" rx="4" fill="#a3cb38"/>
+      <text x="1100" y="377" text-anchor="middle" font-size="11" fill="#2d3436">Scheduler #0: ConcurrentQueue&lt;Task?&gt;</text>
+      <text x="940" y="485" font-size="10" fill="#636e72">Lock ordering invariant: _queueGroups → group.SyncRoot</text>
+    </g>
+  </g>
+
+  <!-- Two-pass FindNextTask -->
+  <g filter="url(#sh)">
+    <rect x="40" y="550" width="800" height="300" rx="10" fill="#f5f6fa" stroke="#636e72" stroke-width="2"/>
+    <text x="440" y="572" text-anchor="middle" font-weight="700" fill="#2d3436">FindNextTask — two-pass algorithm</text>
+
+    <!-- Pass 1 -->
+    <rect x="60" y="590" width="360" height="240" rx="8" fill="#ffeaa7" stroke="#fdcb6e" stroke-width="2"/>
+    <text x="240" y="614" text-anchor="middle" font-weight="700" fill="#2d3436">PASS 1 — Strict priority + quantum</text>
+    <text x="80" y="635" font-size="11" fill="#2d3436">1. <tspan font-weight="600">SNAPSHOT</tspan> _queueGroups (short lock)</text>
+    <text x="80" y="652" font-size="11" fill="#2d3436">2. Iterate snapshot (priority DESC)</text>
+    <text x="80" y="669" font-size="11" fill="#2d3436">3. For each group (per-group lock):</text>
+    <text x="95" y="686" font-size="11" fill="#2d3436">   if ConsecutiveServed &lt; Quantum:</text>
+    <text x="95" y="703" font-size="11" fill="#2d3436">      try ConcurrentQueue.TryDequeue</text>
+    <text x="95" y="720" font-size="11" fill="#2d3436">      on success: ConsecutiveServed++</text>
+    <text x="95" y="737" font-size="11" fill="#2d3436">      return task</text>
+    <text x="80" y="760" font-size="11" fill="#2d3436">4. If no group ate, fall through to Pass 2</text>
+    <text x="80" y="785" font-size="10" fill="#636e72" font-style="italic">Charges quantum; gives lower priorities a chance to run</text>
+    <text x="80" y="802" font-size="10" fill="#636e72" font-style="italic">when higher priorities exhaust their quanta.</text>
+
+    <!-- Pass 2 -->
+    <rect x="460" y="590" width="360" height="240" rx="8" fill="#fab1a0" stroke="#c0392b" stroke-width="2"/>
+    <text x="640" y="614" text-anchor="middle" font-weight="700" fill="#2d3436">PASS 2 — Strict priority fallback</text>
+    <text x="480" y="635" font-size="11" fill="#2d3436">1. Re-iterate the snapshot (priority DESC)</text>
+    <text x="480" y="652" font-size="11" fill="#2d3436">2. For each group (per-group lock):</text>
+    <text x="495" y="669" font-size="11" fill="#2d3436">   try ConcurrentQueue.TryDequeue</text>
+    <text x="495" y="686" font-size="11" fill="#2d3436">   on success: <tspan font-weight="600">do NOT</tspan> charge quantum</text>
+    <text x="495" y="703" font-size="11" fill="#2d3436">   return task</text>
+    <text x="480" y="724" font-size="11" fill="#2d3436">3. If still nothing → return null</text>
+    <text x="480" y="744" font-size="11" fill="#2d3436">   (BlockingCollection sentinel parks worker)</text>
+    <text x="480" y="775" font-size="10" fill="#636e72" font-style="italic">Ensures progress when all higher-priority quanta</text>
+    <text x="480" y="792" font-size="10" fill="#636e72" font-style="italic">exhausted but tasks remain. ResetQuanta() periodically</text>
+    <text x="480" y="809" font-size="10" fill="#636e72" font-style="italic">refills ConsecutiveServed=0 across all groups.</text>
+  </g>
+
+  <!-- Dispatch / OTel side panel -->
+  <g filter="url(#sh)">
+    <rect x="870" y="550" width="490" height="300" rx="10" fill="#dfe6e9" stroke="#636e72" stroke-width="2"/>
+    <text x="1115" y="572" text-anchor="middle" font-weight="700" fill="#2d3436">Two operating modes + OTel (F12)</text>
+
+    <rect x="890" y="590" width="220" height="115" rx="8" fill="#ffffff" stroke="#0984e3"/>
+    <text x="1000" y="610" text-anchor="middle" font-weight="700" fill="#0984e3">Target-scheduler mode</text>
+    <text x="900" y="630" font-size="11" fill="#2d3436">• Wraps an inner TaskScheduler</text>
+    <text x="900" y="646" font-size="11" fill="#2d3436">• <tspan font-weight="600">ConcurrentQueue&lt;Task?&gt;</tspan> (P11)</text>
+    <text x="900" y="662" font-size="11" fill="#2d3436">• CAS slot reservation:</text>
+    <text x="900" y="678" font-size="11" fill="#2d3436">  _delegatesQueuedOrRunning</text>
+    <text x="900" y="694" font-size="11" fill="#2d3436">  &lt;= MaxConcurrency</text>
+
+    <rect x="1120" y="590" width="220" height="115" rx="8" fill="#ffffff" stroke="#27ae60"/>
+    <text x="1230" y="610" text-anchor="middle" font-weight="700" fill="#27ae60">Dedicated-threads mode</text>
+    <text x="1130" y="630" font-size="11" fill="#2d3436">• N owned fore/back threads</text>
+    <text x="1130" y="646" font-size="11" fill="#2d3436">• BlockingCollection&lt;Task?&gt;</text>
+    <text x="1130" y="662" font-size="11" fill="#2d3436">• Null sentinel → call</text>
+    <text x="1130" y="678" font-size="11" fill="#2d3436">  FindNextTask for prioritised</text>
+    <text x="1130" y="694" font-size="11" fill="#2d3436">  pickup</text>
+
+    <rect x="890" y="720" width="450" height="115" rx="8" fill="#ffeaa7" stroke="#fdcb6e"/>
+    <text x="1115" y="740" text-anchor="middle" font-weight="700" fill="#2d3436">OTel — QueuedTaskSchedulerMetrics (F12)</text>
+    <text x="900" y="760" font-size="11" fill="#2d3436">• <tspan font-weight="600">tasks_queued_total</tspan> {priority}  (counter)</text>
+    <text x="900" y="776" font-size="11" fill="#2d3436">• <tspan font-weight="600">tasks_dispatched_total</tspan> {priority}  (counter)</text>
+    <text x="900" y="792" font-size="11" fill="#2d3436">• <tspan font-weight="600">queue_depth</tspan> {priority}  (ObservableGauge)</text>
+    <text x="900" y="808" font-size="11" fill="#2d3436">• <tspan font-weight="600">lock_wait_ms</tspan>  (histogram, Stopwatch.GetTimestamp)</text>
+    <text x="900" y="824" font-size="11" fill="#2d3436">• <tspan font-weight="600">groups_active</tspan>  (ObservableGauge)</text>
+  </g>
+
+  <!-- arrows top to middle -->
+  <line x1="310" y1="190" x2="260" y2="285" stroke="#444" stroke-width="1.5" marker-end="url(#a)" stroke-dasharray="4 2"/>
+  <line x1="600" y1="190" x2="680" y2="285" stroke="#444" stroke-width="1.5" marker-end="url(#a)" stroke-dasharray="4 2"/>
+  <line x1="890" y1="190" x2="1100" y2="285" stroke="#444" stroke-width="1.5" marker-end="url(#a)" stroke-dasharray="4 2"/>
+
+  <!-- arrows middle to find -->
+  <line x1="700" y1="520" x2="440" y2="550" stroke="#a29bfe" stroke-width="2" marker-end="url(#al)"/>
+
+  <!-- legend / lock notes (bottom strip) -->
+  <g transform="translate(40, 870)">
+    <rect width="1320" height="65" rx="8" fill="#f5f6fa" stroke="#b2bec3"/>
+    <text x="20" y="22" font-weight="700" fill="#2d3436">Key invariants</text>
+    <text x="20" y="42" font-size="11" fill="#2d3436">• <tspan font-weight="600">Lock ordering:</tspan> always acquire `_queueGroups` lock BEFORE `group.SyncRoot` (documented; no deadlock).</text>
+    <text x="20" y="58" font-size="11" fill="#2d3436">• <tspan font-weight="600">P10 wins:</tspan> dispatch path no longer holds the global lock; only per-group + brief snapshot.   <tspan font-weight="600">P11 wins:</tspan> CAS replaces monitor lock on target-scheduler queue (Interlocked + ConcurrentQueue).</text>
+  </g>
+</svg>

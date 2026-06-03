@@ -1,0 +1,26 @@
+@inherits LayoutComponentBase
+
+<header class="navbar navbar-dark bg-dark px-4 mb-0 border-bottom border-secondary">
+    <a class="navbar-brand" href="/">⚙️ Orleans Job Dashboard</a>
+    <ul class="navbar-nav flex-row gap-3 ms-4 me-auto">
+        <li class="nav-item">
+            <NavLink class="nav-link px-0" href="/" Match="NavLinkMatch.All">Jobs</NavLink>
+        </li>
+        <li class="nav-item">
+            <NavLink class="nav-link px-0" href="/notifications">Notifications</NavLink>
+        </li>
+        <li class="nav-item">
+            <NavLink class="nav-link px-0" href="/document-processing">Document Processing</NavLink>
+        </li>
+        <li class="nav-item">
+            <NavLink class="nav-link px-0" href="/batch-processing">Batch Processing</NavLink>
+        </li>
+        <li class="nav-item">
+            <NavLink class="nav-link px-0" href="/reports">Reports</NavLink>
+        </li>
+    </ul>
+</header>
+
+<div class="container-fluid px-4 py-3">
+    @Body
+</div>

@@ -1,0 +1,900 @@
+@page "/"
+@rendermode InteractiveServer
+@inject JobService JobService
+@implements IDisposable
+
+@using System.ComponentModel.DataAnnotations
+@using RequestProcessor
+
+<PageTitle>Job Dashboard</PageTitle>
+
+<!-- ── Page header ──────────────────────────────────────────────────────── -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="mb-0">Jobs</h2>
+    <div class="d-flex align-items-center gap-3">
+        <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" role="switch" id="autoRefreshSwitch"
+                   checked="@_autoRefresh" @onchange="ToggleAutoRefresh" />
+            <label class="form-check-label text-muted small" for="autoRefreshSwitch">
+                Auto-refresh
+            </label>
+        </div>
+        <button class="btn btn-sm btn-outline-danger" @onclick="RemoveAllJobs"
+                disabled="@(!_jobs.Any(j => j.Status is not (JobStatus.Pending or JobStatus.Processing)))"
+                title="Remove all completed entries">
+            🗑 Remove All
+        </button>
+        <button class="btn btn-sm btn-outline-secondary" @onclick="ManualRefreshAsync"
+                disabled="@_refreshing" title="Refresh job statuses">
+            @if (_refreshing)
+            {
+                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+            }
+            else
+            {
+                <span>↺ Refresh</span>
+            }
+        </button>
+    </div>
+</div>
+
+<!-- ── Submit / Generate tabs─────────────────────────────────────────── -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header p-0">
+        <ul class="nav nav-tabs card-header-tabs px-3" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link @(_activeTab == Tab.Submit ? "active" : "")"
+                        @onclick='() => _activeTab = Tab.Submit' type="button" role="tab">
+                    Submit New Job
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link @(_activeTab == Tab.Batch ? "active" : "")"
+                        @onclick='() => _activeTab = Tab.Batch' type="button" role="tab">
+                    Generate Batch
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link @(_activeTab == Tab.Stats ? "active" : "")"
+                        @onclick='() => _activeTab = Tab.Stats' type="button" role="tab">
+                    Pool Stats
+                </button>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body">
+
+        @if (_activeTab == Tab.Submit)
+        {
+            <!-- ── Job Type selector ───────────────────────────────────────────── -->
+            <div class="mb-3 d-flex align-items-center gap-2 flex-wrap">
+                <span class="text-muted small me-1">Job type:</span>
+                @foreach (var jt in new[] { "Job", "Batch", "Scheduled" })
+                {
+                    <button type="button"
+                            class="btn btn-sm @(_submitJobType == jt ? "btn-dark" : "btn-outline-secondary")"
+                            @onclick="() => { _submitJobType = jt; _submitError = null; }">
+                        @jt
+                    </button>
+                }
+            </div>
+
+            @if (_submitJobType == "Job")
+            {
+                <!-- ── Submit New Job ──────────────────────────────────────────────── -->
+                <EditForm Model="Form" OnValidSubmit="SubmitJobAsync" FormName="submit-job">
+                    <DataAnnotationsValidator />
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-4">
+                            <label class="form-label">
+                                Payload <span class="text-danger">*</span>
+                            </label>
+                            <InputText class="form-control" @bind-Value="Form.Payload"
+                                       placeholder="Enter job payload…" AutoComplete="off" />
+                            <ValidationMessage For="() => Form.Payload" class="text-danger small" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Category</label>
+                            <InputText class="form-control" @bind-Value="Form.Category"
+                                       placeholder="Optional category…" AutoComplete="off" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Priority</label>
+                            <InputSelect class="form-select" @bind-Value="Form.Priority">
+                                <option value="High">High</option>
+                                <option value="Normal">Normal</option>
+                                <option value="Low">Low</option>
+                            </InputSelect>
+                        </div>
+                        <div class="col-md-3">
+                            <button type="submit" class="btn btn-primary w-100" disabled="@_submitting">
+                                @if (_submitting)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-1"
+                                          role="status" aria-hidden="true"></span>
+                                    <span>Submitting…</span>
+                                }
+                                else
+                                {
+                                    <span>Submit Job</span>
+                                }
+                            </button>
+                        </div>
+                    </div>
+                    @if (_submitError is not null)
+                    {
+                        <div class="alert alert-danger mt-3 mb-0 py-2 small">@_submitError</div>
+                    }
+                </EditForm>
+            }
+            else if (_submitJobType == "Batch")
+            {
+                <!-- ── Submit Batch Job ────────────────────────────────────────────── -->
+                <EditForm Model="BatchForm" OnValidSubmit="SubmitBatchJobAsync" FormName="submit-batch-job">
+                    <DataAnnotationsValidator />
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-4">
+                            <label class="form-label">
+                                Items <span class="text-danger">*</span>
+                                <span class="text-muted fw-normal small">(one per line)</span>
+                            </label>
+                            <InputTextArea class="form-control font-monospace"
+                                           @bind-Value="BatchForm.ItemsText"
+                                           rows="4"
+                                           placeholder="item-001&#10;item-002&#10;item-003" />
+                            <ValidationMessage For="() => BatchForm.ItemsText" class="text-danger small" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Category</label>
+                            <InputText class="form-control" @bind-Value="BatchForm.Category"
+                                       placeholder="Optional category…" AutoComplete="off" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Priority</label>
+                            <InputSelect class="form-select" @bind-Value="BatchForm.Priority">
+                                <option value="High">High</option>
+                                <option value="Normal">Normal</option>
+                                <option value="Low">Low</option>
+                            </InputSelect>
+                        </div>
+                        <div class="col-md-3">
+                            <button type="submit" class="btn btn-primary w-100" disabled="@_submitting">
+                                @if (_submitting)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-1"
+                                          role="status" aria-hidden="true"></span>
+                                    <span>Submitting…</span>
+                                }
+                                else
+                                {
+                                    <span>Submit Batch</span>
+                                }
+                            </button>
+                        </div>
+                    </div>
+                    @if (_submitError is not null)
+                    {
+                        <div class="alert alert-danger mt-3 mb-0 py-2 small">@_submitError</div>
+                    }
+                </EditForm>
+            }
+            else
+            {
+                <!-- ── Submit Scheduled Job ────────────────────────────────────────── -->
+                <EditForm Model="ScheduledForm" OnValidSubmit="SubmitScheduledJobAsync" FormName="submit-scheduled-job">
+                    <DataAnnotationsValidator />
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-3">
+                            <label class="form-label">
+                                Payload <span class="text-danger">*</span>
+                            </label>
+                            <InputText class="form-control" @bind-Value="ScheduledForm.Payload"
+                                       placeholder="Enter payload…" AutoComplete="off" />
+                            <ValidationMessage For="() => ScheduledForm.Payload" class="text-danger small" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">
+                                Scheduled At <span class="text-danger">*</span>
+                            </label>
+                            <input type="datetime-local" class="form-control"
+                                   value="@ScheduledForm.ScheduledAt.ToString("yyyy-MM-ddTHH:mm")"
+                                   @onchange="e => ScheduledForm.ScheduledAt = DateTimeOffset.Parse(e.Value!.ToString()!)" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Category</label>
+                            <InputText class="form-control" @bind-Value="ScheduledForm.Category"
+                                       placeholder="Optional…" AutoComplete="off" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Priority</label>
+                            <InputSelect class="form-select" @bind-Value="ScheduledForm.Priority">
+                                <option value="High">High</option>
+                                <option value="Normal">Normal</option>
+                                <option value="Low">Low</option>
+                            </InputSelect>
+                        </div>
+                        <div class="col-md-2">
+                            <button type="submit" class="btn btn-primary w-100" disabled="@_submitting">
+                                @if (_submitting)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-1"
+                                          role="status" aria-hidden="true"></span>
+                                    <span>Submitting…</span>
+                                }
+                                else
+                                {
+                                    <span>Schedule</span>
+                                }
+                            </button>
+                        </div>
+                    </div>
+                    @if (_submitError is not null)
+                    {
+                        <div class="alert alert-danger mt-3 mb-0 py-2 small">@_submitError</div>
+                    }
+                </EditForm>
+            }
+        }
+        else if (_activeTab == Tab.Batch)
+        {
+            <!-- ── Generate Batch ─────────────────────────────────────────────── -->
+            <div class="mb-3 d-flex align-items-center gap-2 flex-wrap">
+                <span class="text-muted small me-1">Job type:</span>
+                @foreach (var jt in new[] { "Job", "Batch", "Scheduled" })
+                {
+                    <button type="button"
+                            class="btn btn-sm @(_batchJobType == jt ? "btn-dark" : "btn-outline-secondary")"
+                            @onclick="() => _batchJobType = jt">
+                        @jt
+                    </button>
+                }
+            </div>
+            <div class="row g-3 align-items-end">
+                <div class="col-md-2">
+                    <label class="form-label">Count <span class="text-danger">*</span></label>
+                    <input type="number" class="form-control" min="1" max="100"
+                           @bind="_batchForm.Count" @bind:event="oninput" />
+                    @if (_batchForm.Count is < 1 or > 100)
+                    {
+                        <div class="text-danger small">Must be between 1 and 100.</div>
+                    }
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Category</label>
+                    <input type="text" class="form-control" placeholder="Optional category…"
+                           @bind="_batchForm.Category" @bind:event="oninput" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Priority</label>
+                    <select class="form-select" @bind="_batchForm.Priority">
+                        <option value="Random">Random</option>
+                        <option value="Low">Low</option>
+                        <option value="Normal">Normal</option>
+                        <option value="High">High</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <button class="btn btn-secondary w-100"
+                            @onclick="GenerateBatchAsync"
+                            disabled="@(_generatingBatch || _batchForm.Count is < 1 or > 100)">
+                        @if (_generatingBatch)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"
+                                  role="status" aria-hidden="true"></span>
+                            <span>@_batchProgress</span>
+                        }
+                        else
+                        {
+                            <span>⚡ Generate Batch</span>
+                        }
+                    </button>
+                </div>
+            </div>
+
+            @if (_batchError is not null)
+            {
+                <div class="alert alert-danger mt-3 mb-0 py-2 small">@_batchError</div>
+            }
+        }
+        else
+        {
+            <!-- ── Pool Stats ──────────────────────────────────────────────────── -->
+            @if (_statsError is not null)
+            {
+                <div class="alert alert-danger py-2 small mb-0">
+                    Could not load pool stats: @_statsError
+                </div>
+            }
+            else if (_stats is null)
+            {
+                <div class="text-muted small">Loading…</div>
+            }
+            else
+            {
+                var s = _stats;
+                <div class="row g-3">
+
+                    <!-- Workers -->
+                    <div class="col-12">
+                        <div class="fw-semibold text-muted small text-uppercase mb-2" style="letter-spacing:.05em">Workers</div>
+                        <div class="row g-2">
+                            <div class="col-6 col-sm-3">
+                                <div class="card text-center border-0 bg-light h-100">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="fs-4 fw-bold text-info">@s.SiloCount</div>
+                                        <div class="text-muted small">Silos</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-sm-3">
+                                <div class="card text-center border-0 bg-light h-100">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="fs-4 fw-bold text-primary">@s.ActiveWorkers</div>
+                                        <div class="text-muted small">Active</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-sm-3">
+                                <div class="card text-center border-0 bg-light h-100">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="fs-4 fw-bold">@s.MaxConcurrency</div>
+                                        <div class="text-muted small">Max Concurrency</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-sm-3">
+                                <div class="card text-center border-0 bg-light h-100">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="fs-4 fw-bold">@s.BoundedCapacity</div>
+                                        <div class="text-muted small">Capacity / Priority</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Queue depth -->
+                    <div class="col-12">
+                        <div class="fw-semibold text-muted small text-uppercase mb-2" style="letter-spacing:.05em">Queue Depth</div>
+                        <div class="row g-2">
+                            <div class="col-6 col-sm-3">
+                                <div class="card text-center border-0 bg-light h-100">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="fs-4 fw-bold text-danger">@s.QueueDepthHigh</div>
+                                        <div class="text-muted small">High</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-sm-3">
+                                <div class="card text-center border-0 bg-light h-100">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="fs-4 fw-bold text-warning">@s.QueueDepthNormal</div>
+                                        <div class="text-muted small">Normal</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-sm-3">
+                                <div class="card text-center border-0 bg-light h-100">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="fs-4 fw-bold text-secondary">@s.QueueDepthLow</div>
+                                        <div class="text-muted small">Low</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-sm-3">
+                                <div class="card text-center border-0 bg-light h-100">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="fs-4 fw-bold">@s.TotalQueueDepth</div>
+                                        <div class="text-muted small">Total</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Cumulative counts -->
+                    <div class="col-12">
+                        <div class="fw-semibold text-muted small text-uppercase mb-2" style="letter-spacing:.05em">Cumulative</div>
+                        <div class="row g-2">
+                            <div class="col-6 col-sm-3">
+                                <div class="card text-center border-0 bg-light h-100">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="fs-4 fw-bold">@s.TotalEnqueued</div>
+                                        <div class="text-muted small">Enqueued</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-sm-3">
+                                <div class="card text-center border-0 bg-light h-100">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="fs-4 fw-bold text-success">@s.TotalCompleted</div>
+                                        <div class="text-muted small">Completed</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-sm-3">
+                                <div class="card text-center border-0 bg-light h-100">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="fs-4 fw-bold text-danger">@s.TotalFailed</div>
+                                        <div class="text-muted small">Failed</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-sm-3">
+                                <div class="card text-center border-0 bg-light h-100">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="fs-4 fw-bold text-warning">@s.TotalCancelled</div>
+                                        <div class="text-muted small">Cancelled</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            }
+        }
+
+    </div>
+</div>
+<div class="card shadow-sm">
+    <div class="card-header fw-semibold d-flex align-items-center gap-2">
+        <span>All Jobs</span>
+        <span class="badge bg-secondary rounded-pill">@_jobs.Count</span>
+        @if (_jobs.Count > 0)
+        {
+            <button class="btn btn-sm btn-outline-danger ms-auto"
+                    @onclick="CancelAllPendingAsync"
+                    title="Cancel all pending / processing jobs">
+                Cancel All Pending
+            </button>
+        }
+    </div>
+
+    <div class="card-body p-0">
+        @if (_jobs.Count == 0)
+        {
+            <div class="text-center text-muted py-5">
+                <div class="fs-1 mb-2">📭</div>
+                <div>No jobs yet — submit one above to get started.</div>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:22%">Job ID</th>
+                            <th>Payload</th>
+                            <th style="width:10%">Category</th>
+                            <th style="width:9%">Type</th>
+                            <th style="width:11%">Status</th>
+                            <th style="width:9%">Submitted</th>
+                            <th style="width:12%" class="text-end pe-3">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var job in _jobs)
+                        {
+                            <tr>
+                                <td class="font-monospace text-muted" style="font-size:0.78rem">
+                                    @job.Id
+                                </td>
+                                <td>
+                                    <div>@job.Payload</div>
+                                </td>
+                                <td>@(job.Category ?? "—")</td>
+                                <td>
+                                    <span class="badge bg-light text-dark border" title="@job.JobType">
+                                        <i class="bi @TypeIcon(job.JobType) me-1"></i>@job.JobType
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="badge @StatusBadgeClass(job.Status)">
+                                        @job.Status
+                                    </span>
+                                    @if (job.Status == JobStatus.Processing)
+                                    {
+                                        var pct = job.PercentComplete ?? 0;
+                                        <div class="progress mt-1" style="height:4px" title="@pct%">
+                                            <div class="progress-bar progress-bar-striped progress-bar-animated"
+                                                 role="progressbar"
+                                                 style="width:@(pct)%"
+                                                 aria-valuenow="@pct"
+                                                 aria-valuemin="0"
+                                                 aria-valuemax="100">
+                                            </div>
+                                        </div>
+                                        @if (job.ProgressMessage is not null)
+                                        {
+                                            <div class="text-muted" style="font-size:0.75rem; line-height:1.2">@job.ProgressMessage</div>
+                                        }
+                                    }
+                                    else if (job.PercentComplete is not null)
+                                    {
+                                        var pct = job.PercentComplete.Value;
+                                        var barClass = job.Status switch
+                                        {
+                                            JobStatus.Completed => "bg-success",
+                                            JobStatus.Failed    => "bg-danger",
+                                            JobStatus.Cancelled => "bg-warning",
+                                            _                   => ""
+                                        };
+                                        <div class="progress mt-1" style="height:4px" title="@pct%">
+                                            <div class="progress-bar @barClass"
+                                                 role="progressbar"
+                                                 style="width:@(pct)%"
+                                                 aria-valuenow="@pct"
+                                                 aria-valuemin="0"
+                                                 aria-valuemax="100">
+                                            </div>
+                                        </div>
+                                        @if (job.ProgressMessage is not null)
+                                        {
+                                            <div class="text-muted" style="font-size:0.75rem; line-height:1.2">@job.ProgressMessage</div>
+                                        }
+                                    }
+                                </td>
+                                <td class="text-muted" style="font-size:0.82rem">
+                                    @job.SubmittedAt.LocalDateTime.ToString("HH:mm:ss")
+                                </td>
+                                <td class="text-end pe-3">
+                                    @if (job.Status is JobStatus.Pending or JobStatus.Processing)
+                                    {
+                                        <button class="btn btn-sm btn-outline-warning"
+                                                @onclick="() => CancelJobAsync(job.Id)">
+                                            Cancel
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-sm btn-outline-secondary"
+                                                @onclick="() => RemoveJob(job.Id)">
+                                            Remove
+                                        </button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    // ── Form model ────────────────────────────────────────────────────────────
+
+    private enum Tab { Submit, Batch, Stats }
+
+    private sealed class JobForm
+    {
+        [Required(ErrorMessage = "Payload is required.")]
+        [StringLength(500, ErrorMessage = "Payload must be 500 characters or fewer.")]
+        public string Payload { get; set; } = "";
+
+        public string? Category { get; set; }
+
+        public string Priority { get; set; } = "Normal";
+    }
+
+    private sealed class BatchJobSubmitForm
+    {
+        [Required(ErrorMessage = "At least one item is required.")]
+        public string ItemsText { get; set; } = "";
+
+        public string? Category { get; set; }
+
+        public string Priority { get; set; } = "High";
+    }
+
+    private sealed class ScheduledJobForm
+    {
+        [Required(ErrorMessage = "Payload is required.")]
+        [StringLength(500, ErrorMessage = "Payload must be 500 characters or fewer.")]
+        public string Payload { get; set; } = "";
+
+        public DateTimeOffset ScheduledAt { get; set; } = DateTimeOffset.Now.AddMinutes(5);
+
+        public string? Category { get; set; }
+
+        public string Priority { get; set; } = "Low";
+    }
+
+    private sealed class BatchJobForm
+    {
+        public int     Count    { get; set; } = 10;
+        public string? Category { get; set; }
+        public string  Priority { get; set; } = "Random";
+    }
+
+    // ── State ─────────────────────────────────────────────────────────────────
+
+    private JobForm Form { get; set; } = new();
+    private BatchJobSubmitForm BatchForm { get; set; } = new();
+    private ScheduledJobForm ScheduledForm { get; set; } = new();
+    private BatchJobForm _batchForm = new();
+    private Tab     _activeTab = Tab.Submit;
+    private string  _submitJobType = "Job";
+    private string  _batchJobType  = "Job";
+    private IReadOnlyList<JobService.JobEntry> _jobs = [];
+    private bool    _submitting;
+    private bool    _refreshing;
+    private bool    _autoRefresh = true;
+    private string? _submitError;
+    private Timer?  _refreshTimer;
+    private bool    _generatingBatch;
+    private string  _batchProgress = "";
+    private string? _batchError;
+    private RequestPoolStatsSnapshot? _stats;
+    private string? _statsError;
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Start the auto-refresh timer; tick fires every 3 seconds.
+        _refreshTimer = new Timer(OnTimerTick, null,
+            TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
+
+        await RefreshJobsAsync();
+    }
+
+    private void OnTimerTick(object? _)
+    {
+        if (!_autoRefresh) return;
+
+        InvokeAsync(async () =>
+        {
+            await RefreshJobsAsync();
+            StateHasChanged();
+        });
+    }
+
+    // ── Actions ───────────────────────────────────────────────────────────────
+
+    private async Task ManualRefreshAsync()
+    {
+        await RefreshJobsAsync();
+    }
+
+    private async Task RefreshJobsAsync()
+    {
+        if (_refreshing) return;
+        _refreshing = true;
+        try
+        {
+            await JobService.RefreshAllAsync();
+            _jobs = JobService.Jobs;
+
+            var snap = await JobService.GetPoolStatsAsync();
+            if (snap is not null)
+            {
+                _stats = snap;
+                _statsError = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            _statsError = ex.Message;
+        }
+        finally
+        {
+            _refreshing = false;
+        }
+    }
+
+    private async Task SubmitJobAsync()
+    {
+        _submitting  = true;
+        _submitError = null;
+        try
+        {
+            var category = string.IsNullOrWhiteSpace(Form.Category) ? null : Form.Category.Trim();
+            var priority = Enum.Parse<RequestPriority>(Form.Priority);
+            await JobService.SubmitJobRequestAsync(Form.Payload.Trim(), category, priority);
+            _jobs = JobService.Jobs;
+            Form.Payload  = "";
+            Form.Category = null;
+        }
+        catch (Exception ex)
+        {
+            _submitError = $"Failed to submit job: {ex.Message}";
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private async Task SubmitBatchJobAsync()
+    {
+        _submitting  = true;
+        _submitError = null;
+        try
+        {
+            var items = BatchForm.ItemsText
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(s => s.Length > 0)
+                .ToList();
+
+            if (items.Count == 0)
+            {
+                _submitError = "At least one non-empty item is required.";
+                return;
+            }
+
+            var category = string.IsNullOrWhiteSpace(BatchForm.Category) ? null : BatchForm.Category.Trim();
+            var priority = Enum.Parse<RequestPriority>(BatchForm.Priority);
+            await JobService.SubmitBatchJobRequestAsync(items, category, priority);
+            _jobs = JobService.Jobs;
+            BatchForm.ItemsText = "";
+            BatchForm.Category  = null;
+        }
+        catch (Exception ex)
+        {
+            _submitError = $"Failed to submit batch: {ex.Message}";
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private async Task SubmitScheduledJobAsync()
+    {
+        _submitting  = true;
+        _submitError = null;
+        try
+        {
+            var category = string.IsNullOrWhiteSpace(ScheduledForm.Category) ? null : ScheduledForm.Category.Trim();
+            var priority = Enum.Parse<RequestPriority>(ScheduledForm.Priority);
+            await JobService.SubmitScheduledJobRequestAsync(
+                ScheduledForm.Payload.Trim(), ScheduledForm.ScheduledAt, category, priority);
+            _jobs = JobService.Jobs;
+            ScheduledForm.Payload    = "";
+            ScheduledForm.ScheduledAt = DateTimeOffset.Now.AddMinutes(5);
+            ScheduledForm.Category   = null;
+        }
+        catch (Exception ex)
+        {
+            _submitError = $"Failed to submit scheduled job: {ex.Message}";
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private async Task CancelJobAsync(string jobId)
+    {
+        await JobService.CancelAsync(jobId);
+        _jobs = JobService.Jobs;
+    }
+
+    private async Task GenerateBatchAsync()
+    {
+        if (_batchForm.Count is < 1 or > 100) return;
+
+        _generatingBatch = true;
+        _batchError      = null;
+        var count        = _batchForm.Count;
+        var category     = string.IsNullOrWhiteSpace(_batchForm.Category) ? null : _batchForm.Category.Trim();
+
+        try
+        {
+            for (int i = 0; i < count; i++)
+            {
+                _batchProgress = $"Submitting {i + 1} of {count}…";
+                StateHasChanged();
+
+                var priority = _batchForm.Priority == "Random"
+                    ? (RequestPriority)_rng.Next(3)
+                    : Enum.Parse<RequestPriority>(_batchForm.Priority);
+
+                if (_batchJobType == "Batch")
+                {
+                    var items = Enumerable.Range(1, 3)
+                        .Select(_ => BuildRandomPayload(i + 1))
+                        .ToList();
+                    await JobService.SubmitBatchJobRequestAsync(items, category, priority);
+                }
+                else if (_batchJobType == "Scheduled")
+                {
+                    var scheduledAt = DateTimeOffset.Now.AddMinutes(_rng.Next(1, 61));
+                    await JobService.SubmitScheduledJobRequestAsync(
+                        BuildRandomPayload(i + 1), scheduledAt, category, priority);
+                }
+                else
+                {
+                    await JobService.SubmitJobRequestAsync(
+                        BuildRandomPayload(i + 1), category, priority);
+                }
+            }
+
+            _jobs = JobService.Jobs;
+        }
+        catch (Exception ex)
+        {
+            _batchError = $"Batch generation failed: {ex.Message}";
+            _jobs       = JobService.Jobs;
+        }
+        finally
+        {
+            _generatingBatch = false;
+            _batchProgress   = "";
+        }
+    }
+
+    private async Task CancelAllPendingAsync()
+    {
+        var pending = _jobs
+            .Where(j => j.Status is JobStatus.Pending or JobStatus.Processing)
+            .Select(j => j.Id)
+            .ToList();
+
+        foreach (var id in pending)
+            await JobService.CancelAsync(id);
+
+        _jobs = JobService.Jobs;
+    }
+
+    private void RemoveJob(string jobId)
+    {
+        JobService.Remove(jobId);
+        _jobs = JobService.Jobs;
+    }
+
+    private void RemoveAllJobs()
+    {
+        JobService.RemoveAll();
+        _jobs = JobService.Jobs;
+    }
+
+    private void ToggleAutoRefresh(ChangeEventArgs e)
+    {
+        _autoRefresh = e.Value is true;
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private static readonly string[] PayloadVerbs =
+        ["Process", "Analyze", "Generate", "Export", "Import", "Sync", "Validate", "Archive", "Transform", "Index"];
+
+    private static readonly string[] PayloadNouns =
+        ["Invoice", "Report", "Order", "Record", "Document", "Dataset", "Image", "File", "Shipment", "Account"];
+
+    private static readonly Random _rng = new();
+
+    private static string BuildRandomPayload(int seqNumber)
+    {
+        var verb = PayloadVerbs[_rng.Next(PayloadVerbs.Length)];
+        var noun = PayloadNouns[_rng.Next(PayloadNouns.Length)];
+        var id   = _rng.Next(1000, 99999);
+        return $"{verb} {noun} #{id:D5}";
+    }
+
+    private static string StatusBadgeClass(JobStatus status) => status switch
+    {
+        JobStatus.Pending    => "bg-secondary",
+        JobStatus.Processing => "bg-primary",
+        JobStatus.Completed  => "bg-success",
+        JobStatus.Failed     => "bg-danger",
+        JobStatus.Cancelled  => "bg-warning text-dark",
+        _                    => "bg-light text-dark border"
+    };
+
+    private static string TypeIcon(string jobType) => jobType switch
+    {
+        "Batch"     => "bi-stack",
+        "Scheduled" => "bi-clock",
+        _           => "bi-lightning-charge"
+    };
+
+    public void Dispose()
+    {
+        _refreshTimer?.Dispose();
+    }
+}

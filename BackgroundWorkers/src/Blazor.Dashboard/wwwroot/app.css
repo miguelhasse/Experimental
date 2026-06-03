@@ -1,0 +1,21 @@
+/* Blazor.Dashboard — minimal custom overrides (Bootstrap 5 via CDN provides base styles) */
+
+html, body {
+    height: 100%;
+}
+
+.font-monospace {
+    font-family: "Consolas", "Courier New", monospace;
+}
+
+/* Ensure the table cells don't wrap the job ID */
+td.font-monospace {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 220px;
+}
+
+.card-header-tabs{
+    margin-bottom: 0px;
+}

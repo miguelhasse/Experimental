@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" font-family="Segoe UI, Arial, sans-serif" font-size="12">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#444"/>
+    </marker>
+    <marker id="arF" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#27ae60"/>
+    </marker>
+    <filter id="sh" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="1.5" dy="1.5" stdDeviation="1.5" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="800" fill="#fdfdfd"/>
+
+  <text x="600" y="34" text-anchor="middle" font-size="22" font-weight="700" fill="#2d3436">MediatorRequestDispatcher — Handler Routing with FrozenDictionary Cache</text>
+  <text x="600" y="54" text-anchor="middle" font-size="12" fill="#636e72">O(1) lookup · zero keyed-DI traversal on hot path · race-safe lazy fallback</text>
+
+  <!-- Startup pipeline (top) -->
+  <g filter="url(#sh)">
+    <rect x="40" y="90" width="1120" height="170" rx="10" fill="#f5f6fa" stroke="#b2bec3" stroke-width="1.5" stroke-dasharray="6 3"/>
+    <text x="600" y="112" text-anchor="middle" font-weight="700" fill="#2d3436">Startup — DI Container Build</text>
+
+    <rect x="60" y="135" width="220" height="100" rx="8" fill="#ffeaa7" stroke="#fdcb6e" stroke-width="2"/>
+    <text x="170" y="160" text-anchor="middle" font-weight="700" fill="#2d3436">AddMediatorRequestPool()</text>
+    <text x="170" y="180" text-anchor="middle" font-size="11" fill="#2d3436">Registers:</text>
+    <text x="170" y="197" text-anchor="middle" font-size="11" fill="#2d3436">• IRequestDispatcher → Mediator…</text>
+    <text x="170" y="214" text-anchor="middle" font-size="11" fill="#2d3436">• RequestHandlerRegistry (singleton)</text>
+
+    <rect x="320" y="135" width="280" height="100" rx="8" fill="#a29bfe" opacity="0.9"/>
+    <text x="460" y="160" text-anchor="middle" fill="white" font-weight="700">.AddRequestHandler&lt;TRequest, THandler&gt;()</text>
+    <text x="460" y="180" text-anchor="middle" fill="white" font-size="11">Adds keyed DI:</text>
+    <text x="460" y="197" text-anchor="middle" fill="white" font-size="11">  services.AddKeyedSingleton&lt;…&gt;(typeof(TRequest))</text>
+    <text x="460" y="214" text-anchor="middle" fill="white" font-size="11">Records typeof(TRequest) in registry</text>
+
+    <rect x="640" y="135" width="240" height="100" rx="8" fill="#74b9ff"/>
+    <text x="760" y="160" text-anchor="middle" fill="white" font-weight="700">MediatorRequestDispatcher ctor</text>
+    <text x="760" y="180" text-anchor="middle" fill="white" font-size="11">Reads registry → eagerly resolves</text>
+    <text x="760" y="197" text-anchor="middle" fill="white" font-size="11">each handler from keyed DI</text>
+    <text x="760" y="214" text-anchor="middle" fill="white" font-size="11">Builds FrozenDictionary&lt;Type, Wrapper&gt;</text>
+
+    <rect x="920" y="135" width="220" height="100" rx="8" fill="#55efc4"/>
+    <text x="1030" y="160" text-anchor="middle" fill="#2d3436" font-weight="700">FrozenDictionary built</text>
+    <text x="1030" y="180" text-anchor="middle" fill="#2d3436" font-size="11">Immutable, lookup-optimised</text>
+    <text x="1030" y="197" text-anchor="middle" fill="#2d3436" font-size="11">Lookup is ~3-4× faster than</text>
+    <text x="1030" y="214" text-anchor="middle" fill="#2d3436" font-size="11">ConcurrentDictionary, allocation-free</text>
+
+    <line x1="280" y1="185" x2="320" y2="185" stroke="#444" stroke-width="2" marker-end="url(#ar)"/>
+    <line x1="600" y1="185" x2="640" y2="185" stroke="#444" stroke-width="2" marker-end="url(#ar)"/>
+    <line x1="880" y1="185" x2="920" y2="185" stroke="#444" stroke-width="2" marker-end="url(#ar)"/>
+  </g>
+
+  <!-- Hot path (middle) -->
+  <g filter="url(#sh)">
+    <rect x="40" y="290" width="1120" height="290" rx="10" fill="#f5f6fa" stroke="#0984e3" stroke-width="2"/>
+    <text x="600" y="312" text-anchor="middle" font-weight="700" fill="#2d3436">Hot Path — DispatchAsync(RequestContext context, CancellationToken ct)</text>
+
+    <!-- step 1 -->
+    <rect x="60" y="340" width="220" height="100" rx="8" fill="#fab1a0"/>
+    <text x="170" y="365" text-anchor="middle" fill="#2d3436" font-weight="700">1. Get request type</text>
+    <text x="170" y="385" text-anchor="middle" fill="#2d3436" font-size="11">contextTypeToRequestType</text>
+    <text x="170" y="402" text-anchor="middle" fill="#2d3436" font-size="11">.GetOrAdd(context.GetType(),</text>
+    <text x="170" y="419" text-anchor="middle" fill="#2d3436" font-size="11">    t =&gt; t.GenericTypeArguments[0])</text>
+    <text x="170" y="436" text-anchor="middle" fill="#2d3436" font-size="10">eliminates Type[] alloc per call</text>
+
+    <!-- step 2 -->
+    <rect x="320" y="340" width="240" height="100" rx="8" fill="#55efc4"/>
+    <text x="440" y="365" text-anchor="middle" fill="#2d3436" font-weight="700">2. Handler lookup (FrozenDict)</text>
+    <text x="440" y="385" text-anchor="middle" fill="#2d3436" font-size="11">handlers.TryGetValue(requestType,</text>
+    <text x="440" y="402" text-anchor="middle" fill="#2d3436" font-size="11">                       out wrapper)</text>
+    <text x="440" y="423" text-anchor="middle" fill="#2d3436" font-size="11">→ on miss: fall back to keyed DI +</text>
+    <text x="440" y="438" text-anchor="middle" fill="#2d3436" font-size="11">  ConcurrentDictionary.GetOrAdd</text>
+
+    <!-- step 3 -->
+    <rect x="600" y="340" width="240" height="100" rx="8" fill="#74b9ff"/>
+    <text x="720" y="365" text-anchor="middle" fill="white" font-weight="700">3. Invoke wrapper</text>
+    <text x="720" y="385" text-anchor="middle" fill="white" font-size="11">wrapper.HandleAsync(context, ct)</text>
+    <text x="720" y="405" text-anchor="middle" fill="white" font-size="11">Wrapper avoids reflection by</text>
+    <text x="720" y="421" text-anchor="middle" fill="white" font-size="11">capturing typed handler delegate</text>
+    <text x="720" y="437" text-anchor="middle" fill="white" font-size="10">at construction time</text>
+
+    <!-- result -->
+    <rect x="880" y="340" width="250" height="100" rx="8" fill="#27ae60"/>
+    <text x="1005" y="365" text-anchor="middle" fill="white" font-weight="700">4. Return RequestResult</text>
+    <text x="1005" y="385" text-anchor="middle" fill="white" font-size="11">Caller's callback fires</text>
+    <text x="1005" y="405" text-anchor="middle" fill="white" font-size="11">via IWorkItemCallback abstraction</text>
+    <text x="1005" y="421" text-anchor="middle" fill="white" font-size="11">(P8: zero-closure for typed state)</text>
+
+    <line x1="280" y1="390" x2="320" y2="390" stroke="#444" stroke-width="2" marker-end="url(#ar)"/>
+    <line x1="560" y1="390" x2="600" y2="390" stroke="#444" stroke-width="2" marker-end="url(#ar)"/>
+    <line x1="840" y1="390" x2="880" y2="390" stroke="#444" stroke-width="2" marker-end="url(#ar)"/>
+
+    <!-- caches block -->
+    <g>
+      <rect x="60" y="465" width="1080" height="100" rx="8" fill="#dfe6e9" stroke="#636e72" stroke-width="1.5"/>
+      <text x="600" y="488" text-anchor="middle" font-weight="700" fill="#2d3436">Cache Composition (per dispatcher instance — singleton)</text>
+
+      <rect x="80" y="500" width="320" height="55" rx="6" fill="#ffeaa7"/>
+      <text x="240" y="520" text-anchor="middle" font-size="11" fill="#2d3436" font-weight="600">ConcurrentDictionary&lt;Type, Type&gt;</text>
+      <text x="240" y="538" text-anchor="middle" font-size="10" fill="#2d3436">contextType → requestType</text>
+      <text x="240" y="551" text-anchor="middle" font-size="10" fill="#2d3436">(replaces context.GetType().GenericTypeArguments[0])</text>
+
+      <rect x="420" y="500" width="340" height="55" rx="6" fill="#55efc4"/>
+      <text x="590" y="520" text-anchor="middle" font-size="11" fill="#2d3436" font-weight="600">FrozenDictionary&lt;Type, IRequestHandlerWrapper&gt;</text>
+      <text x="590" y="538" text-anchor="middle" font-size="10" fill="#2d3436">requestType → eager-resolved wrapper</text>
+      <text x="590" y="551" text-anchor="middle" font-size="10" fill="#2d3436">(primary cache · O(1) · alloc-free read)</text>
+
+      <rect x="780" y="500" width="340" height="55" rx="6" fill="#a29bfe" opacity="0.85"/>
+      <text x="950" y="520" text-anchor="middle" font-size="11" fill="white" font-weight="600">ConcurrentDictionary&lt;Type, Wrapper&gt; (fallback)</text>
+      <text x="950" y="538" text-anchor="middle" font-size="10" fill="white">requestType → wrapper</text>
+      <text x="950" y="551" text-anchor="middle" font-size="10" fill="white">(populated lazily for runtime-registered handlers)</text>
+    </g>
+  </g>
+</svg>

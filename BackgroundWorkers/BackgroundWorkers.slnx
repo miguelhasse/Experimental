@@ -1,0 +1,19 @@
+<Solution>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/RequestProcessor.Benchmarks/RequestProcessor.Benchmarks.csproj" />
+  </Folder>
+  <Folder Name="/aspire/">
+    <Project Path="aspire/Demo.AppHost/Demo.AppHost.csproj" />
+    <Project Path="aspire/Demo.ServiceDefaults/Demo.ServiceDefaults.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Blazor.Dashboard/Blazor.Dashboard.csproj" />
+    <Project Path="src/Core/RequestProcessor.csproj" />
+    <Project Path="src/Demo.Orleans/RequestProcessor.Orleans.csproj" />
+    <Project Path="src/Demo.Worker/RequestProcessor.Demo.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Core.Tests/RequestProcessor.Tests.csproj" />
+    <Project Path="tests/Orleans.Tests/Orleans.Tests.csproj" />
+  </Folder>
+</Solution>

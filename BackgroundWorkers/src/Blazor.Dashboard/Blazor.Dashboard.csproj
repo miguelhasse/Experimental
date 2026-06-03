@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>BlazorDashboard</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Grain interfaces and models are defined in Orleans.Sample -->
+    <ProjectReference Include="..\Demo.Orleans\RequestProcessor.Orleans.csproj" />
+    <ProjectReference Include="..\..\aspire\Demo.ServiceDefaults\Demo.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+</Project>

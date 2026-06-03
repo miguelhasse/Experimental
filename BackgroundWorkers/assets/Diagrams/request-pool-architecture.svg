@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1000" font-family="Segoe UI, Arial, sans-serif" font-size="12">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#444"/>
+    </marker>
+    <marker id="arrowR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/>
+    </marker>
+    <marker id="arrowG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#27ae60"/>
+    </marker>
+    <linearGradient id="hi" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ff7675"/>
+      <stop offset="100%" stop-color="#d63031"/>
+    </linearGradient>
+    <linearGradient id="no" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#74b9ff"/>
+      <stop offset="100%" stop-color="#0984e3"/>
+    </linearGradient>
+    <linearGradient id="lo" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#a3cb38"/>
+      <stop offset="100%" stop-color="#27ae60"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="1.5" dy="1.5" stdDeviation="1.5" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <rect width="1400" height="1000" fill="#fdfdfd"/>
+
+  <!-- Title -->
+  <text x="700" y="32" text-anchor="middle" font-size="22" font-weight="700" fill="#2d3436">RequestPoolService — Architecture</text>
+  <text x="700" y="52" text-anchor="middle" font-size="12" fill="#636e72">Bounded channels · WRR · Partition fairness · Retry+DLQ · Priority aging · CTS pool · Polly · HealthCheck · OTel</text>
+
+  <!-- Caller layer -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="80" width="280" height="120" rx="10" fill="#ffeaa7" stroke="#fdcb6e" stroke-width="2"/>
+    <text x="180" y="105" text-anchor="middle" font-weight="700" fill="#2d3436">Caller</text>
+    <text x="180" y="125" text-anchor="middle" font-size="11" fill="#2d3436">Orleans grain / HTTP / test</text>
+    <text x="55" y="148" font-size="11" fill="#2d3436">• EnqueueAsync(context, callback, ct)</text>
+    <text x="55" y="164" font-size="11" fill="#2d3436">• EnqueueAsync&lt;TState&gt;(ctx, state, cb)  (P8)</text>
+    <text x="55" y="180" font-size="11" fill="#2d3436">• EnqueueAsync(ctx) → Task&lt;Result&gt;  (F2)</text>
+    <text x="55" y="196" font-size="11" fill="#2d3436">RequestContext { Priority, Timeout (F3),</text>
+  </g>
+  <text x="55" y="212" font-size="11" fill="#2d3436">                  CorrelationId (F14), PartitionKey (F11) }</text>
+
+  <!-- Enqueue pipeline -->
+  <g filter="url(#shadow)">
+    <rect x="370" y="100" width="260" height="100" rx="10" fill="#dfe6e9" stroke="#636e72" stroke-width="2"/>
+    <text x="500" y="125" text-anchor="middle" font-weight="700" fill="#2d3436">Enqueue Pipeline</text>
+    <text x="385" y="145" font-size="11" fill="#2d3436">• Validate (dup-id check via _pending)</text>
+    <text x="385" y="161" font-size="11" fill="#2d3436">• <tspan font-weight="700">CTS pool Rent()</tspan> (P1)</text>
+    <text x="385" y="177" font-size="11" fill="#2d3436">• Producer Activity start</text>
+    <text x="385" y="193" font-size="11" fill="#2d3436">• Route by Priority + PartitionKey</text>
+  </g>
+
+  <!-- Channels per priority -->
+  <g filter="url(#shadow)">
+    <rect x="700" y="80" width="640" height="280" rx="10" fill="#f5f6fa" stroke="#b2bec3" stroke-width="1.5" stroke-dasharray="6 3"/>
+    <text x="1020" y="100" text-anchor="middle" font-weight="700" fill="#2d3436">Bounded Channels (BoundedChannelFullMode configurable — F1)</text>
+
+    <!-- High -->
+    <rect x="720" y="120" width="190" height="220" rx="8" fill="url(#hi)" opacity="0.92"/>
+    <text x="815" y="142" text-anchor="middle" fill="white" font-weight="700">High Priority</text>
+    <text x="815" y="160" text-anchor="middle" fill="white" font-size="11">FullMode: Wait | Drop*</text>
+    <text x="815" y="182" text-anchor="middle" fill="white" font-size="11">Partition channels (F11)</text>
+    <rect x="735" y="195" width="160" height="22" rx="4" fill="#ffffff" opacity="0.85"/>
+    <text x="815" y="210" text-anchor="middle" fill="#2d3436" font-size="10">partition="tenant-a"  [Channel]</text>
+    <rect x="735" y="222" width="160" height="22" rx="4" fill="#ffffff" opacity="0.85"/>
+    <text x="815" y="237" text-anchor="middle" fill="#2d3436" font-size="10">partition="tenant-b"  [Channel]</text>
+    <rect x="735" y="249" width="160" height="22" rx="4" fill="#ffffff" opacity="0.85"/>
+    <text x="815" y="264" text-anchor="middle" fill="#2d3436" font-size="10">partition="__default" [Channel]</text>
+    <text x="815" y="295" text-anchor="middle" fill="white" font-size="10">Lazy alloc · idle-evict</text>
+    <text x="815" y="312" text-anchor="middle" fill="white" font-size="10">SingleWriter opt (P9)</text>
+
+    <!-- Normal -->
+    <rect x="920" y="120" width="190" height="220" rx="8" fill="url(#no)" opacity="0.92"/>
+    <text x="1015" y="142" text-anchor="middle" fill="white" font-weight="700">Normal Priority</text>
+    <text x="1015" y="160" text-anchor="middle" fill="white" font-size="11">FullMode: Wait | Drop*</text>
+    <text x="1015" y="182" text-anchor="middle" fill="white" font-size="11">Partition channels (F11)</text>
+    <rect x="935" y="195" width="160" height="22" rx="4" fill="#ffffff" opacity="0.85"/>
+    <text x="1015" y="210" text-anchor="middle" fill="#2d3436" font-size="10">partition="__default" [Channel]</text>
+    <text x="1015" y="295" text-anchor="middle" fill="white" font-size="10">Per-partition WRR cursor</text>
+
+    <!-- Low -->
+    <rect x="1120" y="120" width="200" height="220" rx="8" fill="url(#lo)" opacity="0.92"/>
+    <text x="1220" y="142" text-anchor="middle" fill="white" font-weight="700">Low Priority</text>
+    <text x="1220" y="160" text-anchor="middle" fill="white" font-size="11">FullMode: Wait | Drop*</text>
+    <text x="1220" y="182" text-anchor="middle" fill="white" font-size="11">Partition channels (F11)</text>
+    <rect x="1135" y="195" width="170" height="22" rx="4" fill="#ffffff" opacity="0.85"/>
+    <text x="1220" y="210" text-anchor="middle" fill="#2d3436" font-size="10">partition="__default" [Channel]</text>
+    <text x="1220" y="295" text-anchor="middle" fill="white" font-size="10">⚠ aged → promoted (F7)</text>
+    <text x="1220" y="312" text-anchor="middle" fill="white" font-size="10">CAS exactly-once</text>
+  </g>
+
+  <!-- Aging Timer -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="240" width="280" height="120" rx="10" fill="#ffeaa7" stroke="#fdcb6e" stroke-width="2"/>
+    <text x="180" y="265" text-anchor="middle" font-weight="700" fill="#2d3436">Priority Aging Timer (F7)</text>
+    <text x="180" y="285" text-anchor="middle" font-size="11" fill="#2d3436">TimeProvider.CreateTimer</text>
+    <text x="55" y="305" font-size="11" fill="#2d3436">• Scan _pending every ScanInterval</text>
+    <text x="55" y="321" font-size="11" fill="#2d3436">• Promote age &gt; threshold → next tier</text>
+    <text x="55" y="337" font-size="11" fill="#2d3436">• CAS PriorityOrClaimed marker (race-safe)</text>
+    <text x="55" y="353" font-size="11" fill="#2d3436">• OTel: priority_promoted{from,to}</text>
+  </g>
+
+  <!-- Worker pool -->
+  <g filter="url(#shadow)">
+    <rect x="370" y="400" width="660" height="200" rx="10" fill="#f5f6fa" stroke="#0984e3" stroke-width="2"/>
+    <text x="700" y="425" text-anchor="middle" font-weight="700" fill="#2d3436">Worker Pool — MaxConcurrency tasks</text>
+
+    <!-- WRR -->
+    <ellipse cx="500" cy="500" rx="80" ry="50" fill="#a29bfe" opacity="0.9"/>
+    <text x="500" y="495" text-anchor="middle" fill="white" font-weight="700">Weighted RR</text>
+    <text x="500" y="512" text-anchor="middle" fill="white" font-size="11">CAS budgets</text>
+    <text x="500" y="527" text-anchor="middle" fill="white" font-size="10">High → Normal → Low</text>
+
+    <!-- workers -->
+    <rect x="640" y="460" width="100" height="40" rx="6" fill="#0984e3"/>
+    <text x="690" y="485" text-anchor="middle" fill="white" font-weight="600">Worker 1</text>
+    <rect x="760" y="460" width="100" height="40" rx="6" fill="#0984e3"/>
+    <text x="810" y="485" text-anchor="middle" fill="white" font-weight="600">Worker 2</text>
+    <rect x="880" y="460" width="100" height="40" rx="6" fill="#0984e3"/>
+    <text x="930" y="485" text-anchor="middle" fill="white" font-weight="600">Worker N</text>
+
+    <text x="700" y="540" text-anchor="middle" font-size="11" fill="#2d3436">Per-worker Task[3] buffer · cached Task&lt;bool&gt; slots (P3)</text>
+    <text x="700" y="558" text-anchor="middle" font-size="11" fill="#2d3436">SemaphoreSlim _concurrencyGates[priority] for per-priority caps</text>
+    <text x="700" y="578" text-anchor="middle" font-size="11" fill="#2d3436">Reads pending channels via two-level WRR (priority → partition)</text>
+  </g>
+
+  <!-- Dispatcher -->
+  <g filter="url(#shadow)">
+    <rect x="370" y="640" width="660" height="230" rx="10" fill="#dfe6e9" stroke="#636e72" stroke-width="2"/>
+    <text x="700" y="665" text-anchor="middle" font-weight="700" fill="#2d3436">Dispatch Pipeline</text>
+
+    <rect x="390" y="685" width="180" height="60" rx="6" fill="#74b9ff"/>
+    <text x="480" y="708" text-anchor="middle" fill="white" font-weight="600">Polly ResiliencePipeline</text>
+    <text x="480" y="725" text-anchor="middle" fill="white" font-size="10">(F10 — optional)</text>
+    <text x="480" y="740" text-anchor="middle" fill="white" font-size="10">CB · retry · timeout · bulkhead</text>
+
+    <rect x="585" y="685" width="180" height="60" rx="6" fill="#55efc4"/>
+    <text x="675" y="708" text-anchor="middle" fill="#2d3436" font-weight="600">IRequestDispatcher</text>
+    <text x="675" y="725" text-anchor="middle" fill="#2d3436" font-size="10">Simple OR Mediator</text>
+    <text x="675" y="740" text-anchor="middle" fill="#2d3436" font-size="10">(see Mediator diagram)</text>
+
+    <rect x="780" y="685" width="220" height="60" rx="6" fill="#fab1a0"/>
+    <text x="890" y="708" text-anchor="middle" fill="#2d3436" font-weight="600">Custom TaskScheduler</text>
+    <text x="890" y="725" text-anchor="middle" fill="#2d3436" font-size="10">Task.Factory.StartNew(static, state)</text>
+    <text x="890" y="740" text-anchor="middle" fill="#2d3436" font-size="10">closure-free (P4)</text>
+
+    <!-- Outcomes -->
+    <rect x="390" y="765" width="180" height="40" rx="6" fill="#27ae60"/>
+    <text x="480" y="789" text-anchor="middle" fill="white" font-weight="600">✓ Success → Callback</text>
+    <rect x="585" y="765" width="180" height="40" rx="6" fill="#fdcb6e"/>
+    <text x="675" y="789" text-anchor="middle" fill="#2d3436" font-weight="600">↻ Retry (F4)</text>
+    <text x="675" y="804" text-anchor="middle" fill="#2d3436" font-size="9">re-enqueue back of channel</text>
+    <rect x="780" y="765" width="220" height="40" rx="6" fill="#c0392b"/>
+    <text x="890" y="789" text-anchor="middle" fill="white" font-weight="600">☠ Dead-letter (F4)</text>
+    <text x="890" y="804" text-anchor="middle" fill="white" font-size="9">OnDeadLetter callback</text>
+
+    <text x="700" y="843" text-anchor="middle" font-size="11" fill="#2d3436">Per-request Timeout (F3) · DrainTimeout (F5) · Effective CTS = linked(item, drain)</text>
+    <text x="700" y="860" text-anchor="middle" font-size="11" fill="#2d3436">Activity tags: priority, attempt, correlation.id (F14)</text>
+  </g>
+
+  <!-- CTS pool -->
+  <g filter="url(#shadow)">
+    <rect x="1080" y="640" width="270" height="115" rx="10" fill="#ffeaa7" stroke="#fdcb6e" stroke-width="2"/>
+    <text x="1215" y="665" text-anchor="middle" font-weight="700" fill="#2d3436">CancellationTokenSource Pool (P1)</text>
+    <text x="1095" y="685" font-size="11" fill="#2d3436">• Rent() returns reset-able CTS</text>
+    <text x="1095" y="701" font-size="11" fill="#2d3436">• Return() → TryReset() else dispose</text>
+    <text x="1095" y="717" font-size="11" fill="#2d3436">• ConcurrentQueue, soft cap 1024</text>
+    <text x="1095" y="733" font-size="11" fill="#2d3436">• CreateLinked() for per-dispatch linking</text>
+    <text x="1095" y="749" font-size="11" fill="#2d3436">• Zero-alloc steady-state on hot enqueue</text>
+  </g>
+
+  <!-- OTel / HealthCheck -->
+  <g filter="url(#shadow)">
+    <rect x="1080" y="770" width="270" height="100" rx="10" fill="#dfe6e9" stroke="#636e72" stroke-width="2"/>
+    <text x="1215" y="795" text-anchor="middle" font-weight="700" fill="#2d3436">Telemetry &amp; Probes</text>
+    <text x="1095" y="815" font-size="11" fill="#2d3436">• RequestPoolMetrics (queued, dispatched,</text>
+    <text x="1095" y="830" font-size="11" fill="#2d3436">   active, retry, dead_letter, promoted,</text>
+    <text x="1095" y="845" font-size="11" fill="#2d3436">   partitions_active, partition_evicted)</text>
+    <text x="1095" y="862" font-size="11" fill="#2d3436">• RequestPoolHealthCheck (F6) → /health</text>
+  </g>
+
+  <!-- Lifecycle/StopAsync -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="640" width="280" height="170" rx="10" fill="#ffeaa7" stroke="#fdcb6e" stroke-width="2"/>
+    <text x="180" y="665" text-anchor="middle" font-weight="700" fill="#2d3436">Lifecycle (IHostedService)</text>
+    <text x="55" y="685" font-size="11" fill="#2d3436">• StartAsync: spin MaxConcurrency workers</text>
+    <text x="55" y="701" font-size="11" fill="#2d3436">   (P5: pre-sized Task[], no LINQ)</text>
+    <text x="55" y="717" font-size="11" fill="#2d3436">• StopAsync (F5):</text>
+    <text x="55" y="733" font-size="11" fill="#2d3436">   - Complete channel writers</text>
+    <text x="55" y="749" font-size="11" fill="#2d3436">   - _drainCts.CancelAfter(DrainTimeout)</text>
+    <text x="55" y="765" font-size="11" fill="#2d3436">   - stoppingToken.Register → drain.Cancel</text>
+    <text x="55" y="781" font-size="11" fill="#2d3436">• Dispose: manual-3 pairwise (P6)</text>
+    <text x="55" y="797" font-size="11" fill="#2d3436">• Cancellation/Validator: zero-LINQ (P12)</text>
+  </g>
+
+  <!-- Edges -->
+  <line x1="320" y1="140" x2="370" y2="150" stroke="#444" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="630" y1="150" x2="700" y2="150" stroke="#444" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <line x1="815" y1="340" x2="555" y2="455" stroke="#444" stroke-width="1.5" marker-end="url(#arrow)" stroke-dasharray="4 2"/>
+  <line x1="1015" y1="340" x2="540" y2="470" stroke="#444" stroke-width="1.5" marker-end="url(#arrow)" stroke-dasharray="4 2"/>
+  <line x1="1220" y1="340" x2="565" y2="490" stroke="#444" stroke-width="1.5" marker-end="url(#arrow)" stroke-dasharray="4 2"/>
+
+  <line x1="700" y1="600" x2="700" y2="640" stroke="#444" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Aging arrow up -->
+  <line x1="180" y1="240" x2="180" y2="195" stroke="#0984e3" stroke-width="1.5" marker-end="url(#arrow)" stroke-dasharray="4 2"/>
+  <line x1="180" y1="360" x2="180" y2="640" stroke="#0984e3" stroke-width="1.5" stroke-dasharray="4 2"/>
+
+  <!-- Retry loop -->
+  <path d="M 675 805 C 675 870, 460 870, 460 750" stroke="#c0392b" stroke-width="1.5" fill="none" marker-end="url(#arrowR)" stroke-dasharray="5 3"/>
+
+  <!-- Callback back to caller -->
+  <path d="M 480 765 C 240 765, 200 250, 180 200" stroke="#27ae60" stroke-width="1.5" fill="none" marker-end="url(#arrowG)" stroke-dasharray="5 3"/>
+
+  <!-- Legend -->
+  <g transform="translate(40, 880)">
+    <rect width="1320" height="100" rx="8" fill="#f5f6fa" stroke="#b2bec3"/>
+    <text x="20" y="22" font-weight="700" fill="#2d3436">Legend</text>
+    <line x1="20" y1="42" x2="60" y2="42" stroke="#444" stroke-width="2" marker-end="url(#arrow)"/>
+    <text x="68" y="46" font-size="11" fill="#2d3436">Synchronous enqueue / dispatch path</text>
+    <line x1="320" y1="42" x2="360" y2="42" stroke="#0984e3" stroke-width="1.5" stroke-dasharray="4 2"/>
+    <text x="368" y="46" font-size="11" fill="#2d3436">Timer / async observation</text>
+    <line x1="540" y1="42" x2="580" y2="42" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arrowR)"/>
+    <text x="588" y="46" font-size="11" fill="#2d3436">Retry loop (F4)</text>
+    <line x1="720" y1="42" x2="760" y2="42" stroke="#27ae60" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arrowG)"/>
+    <text x="768" y="46" font-size="11" fill="#2d3436">Result callback to caller</text>
+    <text x="20" y="72" font-size="11" fill="#2d3436"><tspan font-weight="700">New features:</tspan> F1 FullMode · F2 Task-based · F3 per-req Timeout · F4 Retry+DLQ · F5 DrainTimeout · F6 HealthCheck · F7 Aging · F10 Polly · F11 Partition · F14 CorrelationId</text>
+    <text x="20" y="89" font-size="11" fill="#2d3436"><tspan font-weight="700">Perf wins:</tspan> P1 CTS pool · P3 cached Task&lt;bool&gt; · P4 static delegate · P5 no-LINQ startup · P6 manual-3 dispose · P7 array index · P8 IWorkItemCallback&lt;TState&gt; · P9 SingleWriter · P12 no-LINQ validator</text>
+  </g>
+</svg>

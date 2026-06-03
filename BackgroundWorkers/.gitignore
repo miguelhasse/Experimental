@@ -1,0 +1,22 @@
+# Build outputs
+bin/
+obj/
+
+# NuGet packages (restored automatically)
+*.user
+*.suo
+.vs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Benchmark outputs
+BenchmarkDotNet.Artifacts/
+# Squad: ignore runtime state (logs, inbox, sessions)
+.squad/orchestration-log/
+.squad/log/
+.squad/decisions/inbox/
+.squad/sessions/
+# Squad: SubSquad activation file (local to this machine)
+.squad-workstream

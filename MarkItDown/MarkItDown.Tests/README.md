@@ -2,7 +2,7 @@
 
 xUnit integration tests for the `MarkItDown.Core` library.
 
-**Target:** `net10.0` · **Framework:** xUnit 2.9 · **Runner:** `xunit.runner.visualstudio`
+**Target:** `net10.0` · **Framework:** xUnit v3 · **Runner:** `xunit.runner.visualstudio`
 
 ---
 
@@ -20,7 +20,7 @@ dotnet test MarkItDown.slnx
 
 ---
 
-## Test coverage — 70 tests, all passing
+## Test coverage — 90 tests, all passing
 
 ### Core service / models
 
@@ -164,6 +164,19 @@ dotnet test MarkItDown.slnx
 | `ChmRealFile_SqlServerSystemTablesMap_ProducesNonEmptyMarkdown` | Real CHM file converts to non-empty Markdown |
 | `ChmRealFile_MicrosoftDotNetRemoting_ProducesNonEmptyMarkdown` | Real CHM file (complex LZX) converts correctly |
 | `ChmRealFile_DeployingDotNetApplications_ProducesNonEmptyMarkdown` | Real CHM file with HHC TOC converts correctly |
+
+### LLM captioning
+
+| Test | Description |
+|---|---|
+| `ImageConverter_WithLlmClient_AppendsCaptionToOutput` | When `IChatClient` is provided, image output includes `# Description:` section with caption |
+| `ImageConverter_WithoutLlmClient_NoCaptionSection` | Without `IChatClient`, no `# Description:` section is emitted |
+| `ImageConverter_LlmClientReceivesImageBytes` | The message sent to `IChatClient` contains both `TextContent` prompt and `DataContent` image |
+| `ImageConverter_WithModelId_ForwardsModelToClient` | `llmModel` string is forwarded as `ChatOptions.ModelId` |
+| `ImageConverter_WithCustomPrompt_ForwardsPromptToClient` | Custom `llmPrompt` string is used as the `TextContent` message |
+| `ImageConverter_LlmClientThrows_OutputStillContainsMetadata` | LLM errors are swallowed; output contains metadata but no caption |
+| `MarkItDownService_AcceptsLlmClientParameters` | Constructor with `llmClient`, `llmModel`, and `llmPrompt` does not throw |
+| `MarkItDownConversionContext_ExposesLlmProperties` | `LlmClient`, `LlmModel`, and `LlmPrompt` are surfaced on the conversion context |
 
 ---
 
