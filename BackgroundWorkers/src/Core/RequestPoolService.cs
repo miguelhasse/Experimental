@@ -476,29 +476,6 @@ public sealed partial class RequestPoolService : BackgroundService, IRequestPool
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
-        if (_cachedSchedulers is not null)
-        {
-            for (int i = 0; i < _cachedSchedulers.Length; i++)
-            {
-                var scheduler = _cachedSchedulers[i];
-                if (scheduler is not IDisposable disposable)
-                    continue;
-
-                var seen = false;
-                for (int j = 0; j < i; j++)
-                {
-                    if (ReferenceEquals(scheduler, _cachedSchedulers[j]))
-                    {
-                        seen = true;
-                        break;
-                    }
-                }
-
-                if (!seen)
-                    disposable.Dispose();
-            }
-        }
-
         _priorityAgingTimer?.Dispose();
 
         // Ensure any in-flight aging scan can exit promptly. StopAsync only cancels _drainCts
@@ -545,6 +522,32 @@ public sealed partial class RequestPoolService : BackgroundService, IRequestPool
             catch { /* Dispose must be resilient to individual CTS return failures */ }
         }
         _pending.Clear();
+
+        // Dispose cached schedulers only after workers have finished (executeTask waited
+        // above); disposing earlier races with DispatchWithSchedulerAsync, which reads
+        // _cachedSchedulers on in-flight worker code paths.
+        if (_cachedSchedulers is not null)
+        {
+            for (int i = 0; i < _cachedSchedulers.Length; i++)
+            {
+                var scheduler = _cachedSchedulers[i];
+                if (scheduler is not IDisposable disposable)
+                    continue;
+
+                var seen = false;
+                for (int j = 0; j < i; j++)
+                {
+                    if (ReferenceEquals(scheduler, _cachedSchedulers[j]))
+                    {
+                        seen = true;
+                        break;
+                    }
+                }
+
+                if (!seen)
+                    disposable.Dispose();
+            }
+        }
 
         foreach (var gate in _concurrencyGates)
             gate?.Dispose();
@@ -1183,16 +1186,33 @@ public sealed partial class RequestPoolService : BackgroundService, IRequestPool
                 // Run the async dispatch on the caller-supplied scheduler so that the
                 // synchronous entry point (and any CPU-bound work before the first await)
                 // executes on the desired thread pool.
-                return await Task.Factory.StartNew(
-                    static state =>
-                    {
-                        var (service, ctx, tok) = ((RequestPoolService, RequestContext, CancellationToken))state!;
-                        return service.DispatchCoreAsync(ctx, tok).AsTask();
-                    },
-                    (this, item.Context, dispatchToken),
-                    dispatchToken,
-                    TaskCreationOptions.DenyChildAttach,
-                    scheduler).Unwrap().ConfigureAwait(false);
+                try
+                {
+                    return await Task.Factory.StartNew(
+                        static state =>
+                        {
+                            var (service, ctx, tok) = ((RequestPoolService, RequestContext, CancellationToken))state!;
+                            return service.DispatchCoreAsync(ctx, tok).AsTask();
+                        },
+                        (this, item.Context, dispatchToken),
+                        dispatchToken,
+                        TaskCreationOptions.DenyChildAttach,
+                        scheduler).Unwrap().ConfigureAwait(false);
+                }
+                catch (TaskSchedulerException ex) when (ex.InnerException is ObjectDisposedException)
+                {
+                    // Dispose() disposes _cachedSchedulers only after waiting (with a bounded
+                    // timeout) for in-flight workers to finish. If this worker is still racing
+                    // with shutdown past that timeout, the scheduler may already be disposed by
+                    // the time we reach it here. When TaskScheduler.QueueTask throws during
+                    // scheduling (before the dispatch delegate ever runs), the TPL surfaces it as
+                    // a TaskSchedulerException wrapping the original ObjectDisposedException --
+                    // catching only this specific, narrow shape avoids masking an unrelated
+                    // ObjectDisposedException thrown by the dispatched request handler itself
+                    // (which would propagate unwrapped and must not be silently retried here).
+                    // Fall back to running the dispatch directly on the thread pool.
+                    return await DispatchCoreAsync(item.Context, dispatchToken).ConfigureAwait(false);
+                }
             }
             finally
             {

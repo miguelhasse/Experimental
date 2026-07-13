@@ -559,7 +559,16 @@ namespace System.Threading.Tasks.Schedulers
             }
         }
 
-        private QueueGroup[] RentQueueGroupSnapshot(out int count)
+        /// <summary>
+        /// Executes <paramref name="body"/> while holding the <c>_queueGroups</c> lock,
+        /// recording lock-wait time via <see cref="_metrics"/> when metrics are enabled.
+        /// Centralizes the metrics/no-metrics locking pattern shared by all
+        /// <c>_queueGroups</c>-mutating/reading methods. Callers pass their captured state
+        /// explicitly and use a non-capturing <c>static</c> lambda for <paramref name="body"/>,
+        /// avoiding a per-call closure allocation on these (already rare, setup/teardown-time)
+        /// queue-group mutation paths.
+        /// </summary>
+        private void WithQueueGroupsLock<TState>(TState state, Action<TState> body)
         {
             if (_metrics is { } metrics)
             {
@@ -567,14 +576,45 @@ namespace System.Threading.Tasks.Schedulers
                 lock (_queueGroups)
                 {
                     metrics.RecordLockWait(start);
-                    return CopyQueueGroupSnapshot(out count);
+                    body(state);
+                    return;
                 }
             }
 
             lock (_queueGroups)
             {
-                return CopyQueueGroupSnapshot(out count);
+                body(state);
             }
+        }
+
+        /// <inheritdoc cref="WithQueueGroupsLock{TState}(TState, Action{TState})"/>
+        private T WithQueueGroupsLock<TState, T>(TState state, Func<TState, T> body)
+        {
+            if (_metrics is { } metrics)
+            {
+                var start = Stopwatch.GetTimestamp();
+                lock (_queueGroups)
+                {
+                    metrics.RecordLockWait(start);
+                    return body(state);
+                }
+            }
+
+            lock (_queueGroups)
+            {
+                return body(state);
+            }
+        }
+
+        private QueueGroup[] RentQueueGroupSnapshot(out int count)
+        {
+            var (snapshot, snapshotCount) = WithQueueGroupsLock(this, static self =>
+            {
+                var s = self.CopyQueueGroupSnapshot(out var c);
+                return (s, c);
+            });
+            count = snapshotCount;
+            return snapshot;
         }
 
         private QueueGroup[] CopyQueueGroupSnapshot(out int count)
@@ -815,35 +855,28 @@ namespace System.Threading.Tasks.Schedulers
         {
             while (true)
             {
-                QueueGroup queueGroup;
-                if (_metrics is { } metrics)
+                var (added, queueGroup) = WithQueueGroupsLock((self: this, priority, quantum, queue), static state =>
                 {
-                    var start = Stopwatch.GetTimestamp();
-                    lock (_queueGroups)
+                    // Re-check under the same lock Freeze() uses, so ActivateNewQueue and
+                    // Freeze() properly serialize: either this add completes and is visible
+                    // to Freeze()'s snapshot, or Freeze() has already run and we throw here
+                    // instead of silently adding a group that dispatch will never see.
+                    if (state.self._frozenGroups is not null)
+                        throw new InvalidOperationException("Cannot activate new queues after Freeze() has been called.");
+
+                    if (!state.self._queueGroups.TryGetValue(state.priority, out var group))
                     {
-                        metrics.RecordLockWait(start);
-                        if (!_queueGroups.TryGetValue(priority, out queueGroup!))
-                        {
-                            queueGroup = new QueueGroup { Priority = priority, Quantum = quantum };
-                            queueGroup.Add(queue);
-                            _queueGroups.Add(priority, queueGroup);
-                            return;
-                        }
+                        group = new QueueGroup { Priority = state.priority, Quantum = state.quantum };
+                        group.Add(state.queue);
+                        state.self._queueGroups.Add(state.priority, group);
+                        return (true, group);
                     }
-                }
-                else
-                {
-                    lock (_queueGroups)
-                    {
-                        if (!_queueGroups.TryGetValue(priority, out queueGroup!))
-                        {
-                            queueGroup = new QueueGroup { Priority = priority, Quantum = quantum };
-                            queueGroup.Add(queue);
-                            _queueGroups.Add(priority, queueGroup);
-                            return;
-                        }
-                    }
-                }
+
+                    return (false, group);
+                });
+
+                if (added)
+                    return;
 
                 lock (queueGroup.SyncRoot)
                 {
@@ -882,25 +915,11 @@ namespace System.Threading.Tasks.Schedulers
 
         private void RemoveQueue(QueuedTaskSchedulerQueue queue)
         {
-            QueueGroup? queueGroup;
-            if (_metrics is { } metrics)
-            {
-                var start = Stopwatch.GetTimestamp();
-                lock (_queueGroups)
-                {
-                    metrics.RecordLockWait(start);
-                    if (!_queueGroups.TryGetValue(queue._priority, out queueGroup))
-                        return;
-                }
-            }
-            else
-            {
-                lock (_queueGroups)
-                {
-                    if (!_queueGroups.TryGetValue(queue._priority, out queueGroup))
-                        return;
-                }
-            }
+            var queueGroup = WithQueueGroupsLock((self: this, queue), static state =>
+                state.self._queueGroups.TryGetValue(state.queue._priority, out var group) ? group : null);
+
+            if (queueGroup is null)
+                return;
 
             QueueGroupRemoval removal;
             lock (queueGroup.SyncRoot)
@@ -920,24 +939,11 @@ namespace System.Threading.Tasks.Schedulers
             if (removal.Group is null || _frozenGroups is not null)
                 return;
 
-            if (_metrics is { } metrics)
+            WithQueueGroupsLock((self: this, removal), static state =>
             {
-                var start = Stopwatch.GetTimestamp();
-                lock (_queueGroups)
-                {
-                    metrics.RecordLockWait(start);
-                    if (_queueGroups.TryGetValue(removal.Priority, out var current) && ReferenceEquals(current, removal.Group))
-                        _queueGroups.Remove(removal.Priority);
-                }
-            }
-            else
-            {
-                lock (_queueGroups)
-                {
-                    if (_queueGroups.TryGetValue(removal.Priority, out var current) && ReferenceEquals(current, removal.Group))
-                        _queueGroups.Remove(removal.Priority);
-                }
-            }
+                if (state.self._queueGroups.TryGetValue(state.removal.Priority, out var current) && ReferenceEquals(current, state.removal.Group))
+                    state.self._queueGroups.Remove(state.removal.Priority);
+            });
         }
 
         /// <summary>A group of queues a the same priority level.</summary>
