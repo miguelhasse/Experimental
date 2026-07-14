@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace RequestProcessor;
 
 /// <summary>
@@ -14,6 +16,7 @@ namespace RequestProcessor;
 /// <param name="TotalCancelled">Cumulative requests cancelled before dispatch began.</param>
 /// <param name="MaxConcurrency">Configured worker count.</param>
 /// <param name="BoundedCapacity">Configured per-priority channel capacity.</param>
+[DebuggerDisplay("Queue = {TotalQueueDepth} (H:{QueueDepthHigh}/N:{QueueDepthNormal}/L:{QueueDepthLow}), Active = {ActiveWorkers}/{MaxConcurrency}")]
 public record RequestPoolStats(
     int QueueDepthHigh,
     int QueueDepthNormal,

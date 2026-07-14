@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace RequestProcessor;
 
 /// <summary>
@@ -16,6 +18,7 @@ public delegate void RequestProgressReporter(int percentComplete, string? messag
 /// Used by <see cref="IRequestPool"/> and <see cref="IRequestDispatcher"/> boundaries
 /// where the concrete request type is not relevant.
 /// </summary>
+[DebuggerDisplay("RequestId = {RequestId}, Priority = {Priority}")]
 public abstract record RequestContext(
     string RequestId,
     RequestPriority Priority = RequestPriority.Normal,
