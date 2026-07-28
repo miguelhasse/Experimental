@@ -30,19 +30,7 @@ A .NET class library that provides a **priority-based background request pool** 
 
 ## How it works
 
-```
-Caller ──► IRequestPool.EnqueueAsync(context, callback)
-                │
-     Three BoundedChannels (High / Normal / Low)
-                │
-     Workers drain using weighted round-robin (default weights: High=5, Normal=3, Low=1)
-                │
-                ▼
-     IRequestDispatcher.DispatchAsync(context, ct)
-                │
-                ▼
-     RequestCompletedCallback(result)       ← called on the worker thread
-```
+![Architecture overview](../../assets/diagrams/architecture-overview.svg)
 
 `RequestPoolService` is registered as three interfaces from a single instance:
 - `IRequestPool` — submit work

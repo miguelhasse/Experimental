@@ -1,0 +1,25 @@
+%% Source diagram for architecture-overview.svg
+%% Render with: npx @mermaid-js/mermaid-cli -i architecture-overview.mmd -o architecture-overview.svg
+flowchart TD
+    Caller["Caller"]
+    Enqueue["IRequestPool.EnqueueAsync(context, callback)"]
+
+    subgraph Channels["Three BoundedChannels"]
+        direction LR
+        High["High"]
+        Normal["Normal"]
+        Low["Low"]
+    end
+
+    Workers["Workers — weighted round-robin drain\ndefault weights: High=5, Normal=3, Low=1"]
+    Dispatch["IRequestDispatcher.DispatchAsync(context, ct)"]
+    Callback["RequestCompletedCallback(result)\ncalled on the worker thread"]
+
+    Caller --> Enqueue
+    Enqueue --> Channels
+    Channels --> Workers
+    Workers --> Dispatch
+    Dispatch --> Callback
+
+    %% BoundedCapacity applies independently per priority channel.
+    %% Each priority gets a configurable token budget per WRR cycle.

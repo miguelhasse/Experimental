@@ -14,44 +14,9 @@ Production-grade features layered on top of the core pipeline:
 
 See `assets/diagrams/` for SVG architecture diagrams of the request pool, mediator dispatcher and queued task scheduler.
 
-## Solution structure
-
-```
-BackgroundWorkers.slnx
-│
-├── src/
-│   ├── Core/                ← Class library: IRequestPool, mediator dispatcher, priority channels, telemetry
-│   ├── Demo.Orleans/        ← Orleans 10 silo: grains submit jobs through IRequestPool; Orleans dashboard
-│   ├── Blazor.Dashboard/    ← Blazor Server UI: submit jobs, track status + live progress, pool stats
-│   └── Demo.Worker/         ← Standalone worker demo with a simple SampleRequestDispatcher
-│
-├── aspire/
-│   ├── Demo.AppHost/        ← Aspire 13 orchestrator: starts all services
-│   └── Demo.ServiceDefaults/ ← Shared OTel (traces + metrics), health checks, service discovery
-│
-├── benchmarks/
-│   └── RequestProcessor.Benchmarks/ ← BenchmarkDotNet project: throughput, scheduling, allocation
-│
-└── tests/
-    ├── Core.Tests/          ← xUnit tests targeting the Core library
-    └── Orleans.Tests/       ← xUnit tests targeting the Orleans grain layer
-```
-
 ## Architecture
 
-```
-Caller ──► IRequestPool.EnqueueAsync(context, callback)
-                │
-     Three BoundedChannels (High / Normal / Low)
-                │
-     Workers drain using weighted round-robin (default weights: High=5, Normal=3, Low=1)
-                │
-                ▼
-     IRequestDispatcher.DispatchAsync(context, ct)
-                │
-                ▼
-     RequestCompletedCallback(result)       ← called on the worker thread
-```
+![Architecture overview](assets/diagrams/architecture-overview.svg)
 
 `BoundedCapacity` applies independently per priority channel. Workers use **weighted round-robin** to drain the channels — each priority gets a configurable token budget per cycle, so lower-priority requests are guaranteed to make progress even under sustained high-priority load.
 

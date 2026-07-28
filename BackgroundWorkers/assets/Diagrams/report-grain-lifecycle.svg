@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 560" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1f2937" />
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="920" height="560" fill="#ffffff" />
+
+  <!-- Lane headers -->
+  <rect x="30"  y="10" width="180" height="40" rx="6" fill="#eef2ff" stroke="#4338ca" stroke-width="2" />
+  <text x="120" y="35" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">Client</text>
+
+  <rect x="370" y="10" width="220" height="40" rx="6" fill="#ecfdf5" stroke="#047857" stroke-width="2" />
+  <text x="480" y="35" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">ReportGrain (active)</text>
+
+  <rect x="700" y="10" width="200" height="40" rx="6" fill="#fffbeb" stroke="#b45309" stroke-width="2" />
+  <text x="800" y="35" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">RequestPool (thread pool)</text>
+
+  <!-- Lifelines -->
+  <line x1="120" y1="50" x2="120" y2="540" stroke="#9ca3af" stroke-width="1.5" stroke-dasharray="4,4" />
+  <line x1="480" y1="50" x2="480" y2="540" stroke="#9ca3af" stroke-width="1.5" stroke-dasharray="4,4" />
+  <line x1="800" y1="50" x2="800" y2="540" stroke="#9ca3af" stroke-width="1.5" stroke-dasharray="4,4" />
+
+  <!-- 1: GenerateAsync -->
+  <line x1="120" y1="80" x2="480" y2="80" stroke="#1f2937" stroke-width="1.75" marker-end="url(#arrow)" />
+  <text x="130" y="74" font-size="12" fill="#374151">GenerateAsync()</text>
+
+  <!-- 2: return Pending + deactivate -->
+  <line x1="480" y1="104" x2="120" y2="104" stroke="#1f2937" stroke-width="1.75" stroke-dasharray="5,3" marker-end="url(#arrow)" />
+  <text x="130" y="98" font-size="12" fill="#374151">JobStatus.Pending</text>
+  <text x="490" y="98" font-size="11.5" fill="#6b7280" font-style="italic">DeactivateOnIdle()</text>
+
+  <!-- 3: GenerateReportHandler work -->
+  <line x1="800" y1="86" x2="800" y2="86" />
+  <text x="700" y="120" font-size="11.5" fill="#6b7280" font-style="italic">GenerateReportHandler → (work)</text>
+
+  <!-- 4: ReviewAsync -->
+  <line x1="120" y1="150" x2="480" y2="150" stroke="#1f2937" stroke-width="1.75" marker-end="url(#arrow)" />
+  <text x="130" y="144" font-size="12" fill="#374151">ReviewAsync()</text>
+  <text x="490" y="144" font-size="11.5" fill="#6b7280" font-style="italic">[re-activated]</text>
+
+  <!-- 5: EnqueueAsync -->
+  <line x1="480" y1="174" x2="800" y2="174" stroke="#1f2937" stroke-width="1.75" marker-end="url(#arrow)" />
+  <text x="490" y="168" font-size="12" fill="#374151">EnqueueAsync()</text>
+
+  <!-- 6: return Pending + deactivate -->
+  <line x1="480" y1="198" x2="120" y2="198" stroke="#1f2937" stroke-width="1.75" stroke-dasharray="5,3" marker-end="url(#arrow)" />
+  <text x="130" y="192" font-size="12" fill="#374151">JobStatus.Pending</text>
+  <text x="490" y="192" font-size="11.5" fill="#6b7280" font-style="italic">DeactivateOnIdle()</text>
+  <text x="700" y="222" font-size="11.5" fill="#6b7280" font-style="italic">ReviewReportHandler → (work)</text>
+
+  <!-- 7: OnCompleted -->
+  <line x1="800" y1="260" x2="480" y2="260" stroke="#1f2937" stroke-width="1.75" stroke-dasharray="5,3" marker-end="url(#arrow)" />
+  <text x="600" y="254" font-size="12" fill="#374151">OnCompleted(output)</text>
+
+  <text x="370" y="288" font-size="11.5" fill="#6b7280" font-style="italic">[re-activated, updates tracker, deactivates]</text>
+
+  <!-- 8: GenerateAsync again -->
+  <line x1="120" y1="330" x2="480" y2="330" stroke="#1f2937" stroke-width="1.75" marker-end="url(#arrow)" />
+  <text x="130" y="324" font-size="12" fill="#374151">GenerateAsync()</text>
+  <text x="490" y="324" font-size="11.5" fill="#6b7280" font-style="italic">[re-activated]</text>
+
+  <!-- 9: return Completed no-op -->
+  <line x1="480" y1="354" x2="120" y2="354" stroke="#1f2937" stroke-width="1.75" stroke-dasharray="5,3" marker-end="url(#arrow)" />
+  <text x="130" y="348" font-size="12" fill="#374151">JobStatus.Completed</text>
+  <text x="490" y="348" font-size="11.5" fill="#6b7280" font-style="italic">(no-op: already done)</text>
+
+  <text x="460" y="420" text-anchor="middle" font-size="12" fill="#6b7280">
+    Idempotency: repeating GenerateAsync() after completion is a no-op — the grain never re-enqueues a finished operation.
+  </text>
+</svg>

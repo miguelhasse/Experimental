@@ -1,0 +1,29 @@
+%% Source diagram for notification-grain-lifecycle.svg
+%% Render with: npx @mermaid-js/mermaid-cli -i notification-grain-lifecycle.mmd -o notification-grain-lifecycle.svg
+sequenceDiagram
+    participant Client
+    participant NotificationGrain as NotificationGrain (active)
+    participant RequestPool as RequestPool (thread pool)
+
+    Client->>NotificationGrain: SendEmailAsync()
+    NotificationGrain-->>Client: JobStatus.Pending
+    Note over NotificationGrain: DeactivateOnIdle()
+    RequestPool-->>RequestPool: EmailNotificationHandler → (work)
+
+    Client->>NotificationGrain: SendSmsAsync()
+    Note over NotificationGrain: [re-activated]
+    NotificationGrain->>RequestPool: EnqueueAsync("...:sms")
+    RequestPool-->>RequestPool: SmsNotificationHandler → (work)
+    NotificationGrain-->>Client: JobStatus.Pending
+    Note over NotificationGrain: DeactivateOnIdle()
+
+    RequestPool-->>NotificationGrain: OnCompleted(output)
+    Note over NotificationGrain: [re-activated, logs at notification level]
+
+    Client->>NotificationGrain: SendEmailAsync()
+    Note over NotificationGrain: [re-activated]
+    NotificationGrain-->>Client: JobStatus.Completed
+    Note over NotificationGrain: (no-op: already done)
+
+    %% Each channel (email/sms/push) is an independent per-channel job key —
+    %% one channel completing does not affect the others.

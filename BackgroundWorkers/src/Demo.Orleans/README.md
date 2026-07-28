@@ -121,23 +121,7 @@ The closure captures `opKey` precisely — no RequestId parsing needed. `OnCompl
 
 ### Lifecycle diagram
 
-```
-Client               ReportGrain (active)          RequestPool (thread pool)
-  │                       │                                  │
-  │──GenerateAsync()──────▶│                                  │
-  │                       │──EnqueueAsync()──────────────────▶│
-  │◀──JobStatus.Pending───│  DeactivateOnIdle()               │──GenerateReportHandler──▶ (work)
-  │                       ·                                  │
-  │──ReviewAsync()────────▶ [re-activated]                    │
-  │                       │──EnqueueAsync()──────────────────▶│
-  │◀──JobStatus.Pending───│  DeactivateOnIdle()               │──ReviewReportHandler──▶ (work)
-  │                       ·                                  │
-  │                       ·  ◀──OnCompleted(output)──────────────│
-  │               [re-activated, updates tracker, deactivates]│
-  │                       ·                                  │
-  │──GenerateAsync()──────▶ [re-activated]                    │
-  │◀──JobStatus.Completed─│  (no-op: already done)            │
-```
+![ReportGrain lifecycle](../../assets/diagrams/report-grain-lifecycle.svg)
 
 ---
 
@@ -213,23 +197,7 @@ The closure captures `channelJobId` precisely — no parsing needed. `OnComplete
 
 ### Lifecycle diagram
 
-```
-Client                NotificationGrain (active)       RequestPool (thread pool)
-  │                          │                                  │
-  │──SendEmailAsync()────────▶│                                  │
-  │                          │──EnqueueAsync("...:email")───────▶│
-  │◀──JobStatus.Pending──────│  DeactivateOnIdle()               │──EmailNotificationHandler──▶
-  │                          ·                                  │
-  │──SendSmsAsync()──────────▶ [re-activated]                    │
-  │                          │──EnqueueAsync("...:sms")─────────▶│──SmsNotificationHandler──▶
-  │◀──JobStatus.Pending──────│  DeactivateOnIdle()               │
-  │                          ·                                  │
-  │                          ·  ◀──OnCompleted(output)──────────│
-  │              [re-activated, logs at notification level]   │
-  │                          ·                                  │
-  │──SendEmailAsync()────────▶ [re-activated]                    │
-  │◀──JobStatus.Completed────│  (no-op: already done)            │
-```
+![NotificationGrain lifecycle](../../assets/diagrams/notification-grain-lifecycle.svg)
 
 ---
 
@@ -355,27 +323,7 @@ builder.Services
 
 ### Grain lifecycle
 
-```
-Client             JobGrain (active)             RequestPool (thread pool)
-  │                     │                                 │
-  │──SubmitAsync()──────▶│                                 │
-  │                     │──EnqueueAsync()────────────────▶│
-  │                     │◀──(accepted)────────────────────│
-  │                     │  DeactivateOnIdle()              │
-  │                     │  [activation released]           │──HandleAsync()──▶ (work)
-  │                     ·                                 │
-  │                 [deactivated]                         │  OnProgress fires periodically
-  │                     ·   ◀─────────OnProgress()────────│
-  │             [re-activated, one turn, deactivates]     │
-  │                     ·                                 │
-  │                     ·   ◀─────────OnCompleted()───────│
-  │             [re-activated, one turn]                  │
-  │                     │  tracker.SetStatus(Completed)   │
-  │                     │  [deactivates again]            │
-  │                     ·                                 │
-  │──GetStatusAsync()───▶ [re-activated if needed]        │
-  │◀──Completed──────────│                                │
-```
+![JobGrain lifecycle](../../assets/diagrams/job-grain-lifecycle.svg)
 
 ### Progress reporting
 

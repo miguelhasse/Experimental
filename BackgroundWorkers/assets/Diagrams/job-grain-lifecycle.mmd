@@ -1,0 +1,29 @@
+%% Source diagram for job-grain-lifecycle.svg
+%% Render with: npx @mermaid-js/mermaid-cli -i job-grain-lifecycle.mmd -o job-grain-lifecycle.svg
+sequenceDiagram
+    participant Client
+    participant JobGrain as JobGrain (active)
+    participant RequestPool as RequestPool (thread pool)
+
+    Client->>JobGrain: SubmitAsync()
+    JobGrain->>RequestPool: EnqueueAsync()
+    RequestPool-->>JobGrain: (accepted)
+    Note over JobGrain: DeactivateOnIdle() — activation released
+    RequestPool-->>RequestPool: HandleAsync() → (work)
+    Note over RequestPool: OnProgress fires periodically
+    Note over JobGrain: [deactivated]
+
+    RequestPool-->>JobGrain: OnProgress()
+    Note over JobGrain: [re-activated, one turn, deactivates]
+
+    RequestPool-->>JobGrain: OnCompleted()
+    Note over JobGrain: [re-activated, one turn]
+    Note over JobGrain: tracker.SetStatus(Completed)
+    Note over JobGrain: [deactivates again]
+
+    Client->>JobGrain: GetStatusAsync()
+    Note over JobGrain: [re-activated if needed]
+    JobGrain-->>Client: Completed
+
+    %% The grain deactivates immediately after enqueuing and is re-activated
+    %% for exactly one turn per progress/completion event.

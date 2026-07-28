@@ -1,0 +1,29 @@
+%% Source diagram for report-grain-lifecycle.svg
+%% Render with: npx @mermaid-js/mermaid-cli -i report-grain-lifecycle.mmd -o report-grain-lifecycle.svg
+sequenceDiagram
+    participant Client
+    participant ReportGrain as ReportGrain (active)
+    participant RequestPool as RequestPool (thread pool)
+
+    Client->>ReportGrain: GenerateAsync()
+    ReportGrain-->>Client: JobStatus.Pending
+    Note over ReportGrain: DeactivateOnIdle()
+    RequestPool-->>RequestPool: GenerateReportHandler → (work)
+
+    Client->>ReportGrain: ReviewAsync()
+    Note over ReportGrain: [re-activated]
+    ReportGrain->>RequestPool: EnqueueAsync()
+    ReportGrain-->>Client: JobStatus.Pending
+    Note over ReportGrain: DeactivateOnIdle()
+    RequestPool-->>RequestPool: ReviewReportHandler → (work)
+
+    RequestPool-->>ReportGrain: OnCompleted(output)
+    Note over ReportGrain: [re-activated, updates tracker, deactivates]
+
+    Client->>ReportGrain: GenerateAsync()
+    Note over ReportGrain: [re-activated]
+    ReportGrain-->>Client: JobStatus.Completed
+    Note over ReportGrain: (no-op: already done)
+
+    %% Idempotency: repeating GenerateAsync() after completion is a no-op —
+    %% the grain never re-enqueues a finished operation.
