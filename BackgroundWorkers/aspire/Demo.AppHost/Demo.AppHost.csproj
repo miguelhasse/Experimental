@@ -1,10 +1,9 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Aspire.AppHost.Sdk/13.5.3">
   <!--
     Aspire.AppHost.Sdk is the NuGet-based replacement for the deprecated Aspire workload.
     It sets SkipAspireWorkloadManifest=true (suppresses NETSDK1228), sets IsAspireHost=true
     for Projects.* code generation, and configures DCP/Dashboard paths automatically.
   -->
-  <Sdk Name="Aspire.AppHost.Sdk" Version="13.0.0" />
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -13,10 +12,6 @@
     <Nullable>enable</Nullable>
     <UserSecretsId>demo-apphost-secrets</UserSecretsId>
   </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Aspire.Hosting.AppHost" />
-  </ItemGroup>
 
   <ItemGroup>
     <!-- IsAspireProjectResource="true" tells the Aspire SDK to generate a Projects.* proxy type. -->
