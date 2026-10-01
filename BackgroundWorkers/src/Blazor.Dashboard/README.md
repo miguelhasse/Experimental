@@ -33,15 +33,21 @@ When running under Aspire, the `Demo.AppHost` configuration includes `.WaitFor(o
 Blazor.Dashboard/
 ├── Components/
 │   ├── App.razor            ← Blazor application root
-│   ├── Layout/              ← MainLayout (navbar with Jobs + Notifications + Document Processing links)
+│   ├── Layout/              ← MainLayout (navbar with Jobs + Notifications + Document Processing + Batch Processing + Reports + Durable Jobs links)
 │   └── Pages/
 │       ├── Jobs.razor              ← Jobs dashboard page (/)
 │       ├── Notifications.razor     ← Notifications dashboard page (/notifications)
-│       └── DocumentProcessing.razor ← Document Processing pipeline page (/document-processing)
+│       ├── DocumentProcessing.razor ← Document Processing pipeline page (/document-processing)
+│       ├── BatchProcessing.razor   ← Batch Processing page (/batch-processing)
+│       ├── Reports.razor           ← Reports page (/reports)
+│       └── DurableJobs.razor       ← Durable jobs page (/durable-jobs)
 ├── Services/
 │   ├── JobService.cs               ← Singleton: job state + Orleans client bridge
 │   ├── NotificationService.cs      ← Singleton: notification grain state + Orleans client bridge
-│   └── DocumentProcessingService.cs ← Singleton: pipeline state + Orleans client bridge
+│   ├── DocumentProcessingService.cs ← Singleton: pipeline state + Orleans client bridge
+│   ├── BatchService.cs             ← Singleton: batch state + Orleans client bridge
+│   ├── ReportService.cs            ← Singleton: report state + Orleans client bridge
+│   └── DurableJobService.cs        ← Singleton: stateless IDurableJobGrain client bridge
 ├── Program.cs               ← Host setup: Razor components, Orleans client, service defaults
 ├── GlobalUsings.cs          ← Project-wide using aliases
 └── appsettings.json
@@ -178,6 +184,101 @@ Progress bars show the animated striped style while a step is `Processing`, and 
 
 ---
 
+### Batch Processing page (`/batch-processing`)
+
+Demonstrates `IBatchCoordinatorGrain`: a coordinator that fans a batch of items out across multiple worker grains and reports an aggregated `BatchCoordinationSummary`.
+
+#### Run Batches tab
+
+| Field | Description |
+|---|---|
+| Item Count | Items per batch (1–1000, default 100) |
+| Worker Count | Workers sharing the batch (1–20, default 5) |
+
+Clicking **Run** generates a `batch-XXXX` ID and calls `ProcessBatchAsync(itemCount, workerCount)` fire-and-forget, so the ID appears in the table immediately and status arrives through polling.
+
+#### Pool Stats tab
+
+Identical layout to the Jobs page Pool Stats tab — shows the same shared `RequestPoolStatsSnapshot`.
+
+#### Batches table
+
+| Column | Description |
+|---|---|
+| **Batch ID** | Grain key (`batch-XXXX`) |
+| **Started** | Local timestamp |
+| **Items** / **Workers** | The configuration the batch was started with |
+| **Status** | Overall status badge (`OverallStatus` from the summary) |
+| **Progress** | Bar of (completed + failed + cancelled) / items, with `completed/items` text and ✕ (failed) / ⊘ (cancelled) counts |
+| **Actions** | **Restart** (Completed/Failed/Cancelled; starts a new batch with the same configuration); **Remove** (when not Pending/Processing) |
+
+Header actions: **Remove All** clears every non-active entry; **Cancel All Pending** (table header) calls `CancelAsync()` on every Pending/Processing batch. Only work still queued in the pool is cancelled — already-dispatched items are skipped.
+
+---
+
+### Reports page (`/reports`)
+
+Demonstrates `IReportGrain`, which runs three independent operations per report: **Generate → Review → Publish**. Each operation is idempotent at the grain level and tracked under its own key.
+
+#### Run Reports tab
+
+| Field | Description |
+|---|---|
+| Count | Number of reports to start (1–20, default 3) |
+
+Clicking **Run** generates N `report-XXXX` IDs and dispatches all three operations for each report.
+
+#### Pool Stats tab
+
+Identical layout to the Jobs page Pool Stats tab — shows the same shared `RequestPoolStatsSnapshot`.
+
+#### Reports table
+
+| Column | Description |
+|---|---|
+| **Report ID** | Grain key (`report-XXXX`) |
+| **Started** | Local timestamp |
+| **Generate** / **Review** / **Publish** | Per-operation status badge; while `Processing`, a striped progress bar with the progress message, and a solid green/red/yellow bar once terminal |
+| **Actions** | **Restart** (when no Generate is active and any operation Failed/Cancelled; re-dispatches all three); **Remove** (when no operation is Pending/Processing) |
+
+Header actions: **Remove All** clears every report with no active operation; **Cancel All Pending** calls `CancelAsync()` on every report with a Pending/Processing operation.
+
+---
+
+### Durable Jobs page (`/durable-jobs`)
+
+Demonstrates `IDurableJobGrain`: a string-keyed **owner** grain that journals many jobs durably and can recover unfinished ones if the silo running them dies.
+
+#### Header
+
+| Control | Description |
+|---|---|
+| **Owner** | Grain key (default `demo-owner`); changing it loads that owner's jobs |
+| **Auto-refresh** / **↺ Refresh** | Same 500 ms timer behaviour as the other pages |
+| **♻ Recover unfinished** | Calls `RecoverUnfinishedJobsAsync()` and reports how many jobs were resubmitted |
+| **↻ Retry failed** | Resubmits every `Failed` job with its original request (enabled only when there is one) |
+
+#### Submit Job tab
+
+| Field | Description |
+|---|---|
+| Payload | Required text |
+| Category | Optional |
+| Priority | `Low`, `Normal`, `High` |
+| Partial results | 0–100 partial results the job emits before its final result |
+
+The job id is generated on submit (`job-XXXXXXXX`). Errors thrown by the grain are shown in an alert under the form.
+
+#### Pool Stats tab
+
+Identical layout to the Jobs page Pool Stats tab — shows the same shared `RequestPoolStatsSnapshot`.
+
+#### Jobs table
+
+Unlike the other pages, nothing is tracked locally: each refresh reads `GetJobsAsync()` and `GetFinishedCountAsync()`, so the table always reflects the grain's durable state. Columns: job id, status badge, progress bar, message, attempts, epoch, results received, owner silo and last update. Processing jobs show a **Cancel** button and failed jobs a **Retry** button in an Actions column. Click a row to expand the request, output and error.
+
+---
+
 ## `JobService` — singleton, shared across all circuits
 
 `JobService` is registered as a **singleton**, meaning the in-memory `_jobs` list is shared across every browser tab and SSR prerender within the same server process:
@@ -239,6 +340,59 @@ This is intentional — job state persists across page refreshes and is visible 
 | `Pipelines` | Read-only snapshot, most-recent first |
 
 The `PipelineEntry` record tracks status and progress for all three steps, plus the typed outputs (`ExtractedContentOutput?`, `TransformedContentOutput?`, `IndexedContentOutput?`) populated after `RefreshAllAsync`.
+
+---
+
+## `BatchService` — singleton, shared across all circuits
+
+`BatchService` is registered as a **singleton** with the same shared-state semantics as the other services.
+
+### Key methods
+
+| Method | Description |
+|---|---|
+| `GenerateId()` | Returns a unique `batch-XXXX` ID (4 random lower-alphanumeric characters) |
+| `CreateBatchAsync(itemCount, workerCount)` | Registers a `BatchEntry`, then calls `IBatchCoordinatorGrain.ProcessBatchAsync` fire-and-forget; returns the ID immediately |
+| `RefreshAllAsync(ct)` | Calls `IBatchCoordinatorGrain.GetSummaryAsync()` for all tracked batches in parallel; updates `Status` and `Summary` |
+| `CancelAllPendingAsync()` | Calls `CancelAsync()` on every Pending/Processing batch, then refreshes |
+| `Remove(id)` / `RemoveAll()` | Removes one entry / all non-active entries |
+| `IsRestartable(entry)` | `true` when status is Completed, Failed or Cancelled |
+| `Batches` | Read-only snapshot, most-recent first |
+
+---
+
+## `ReportService` — singleton, shared across all circuits
+
+`ReportService` is registered as a **singleton** with the same shared-state semantics as the other services.
+
+### Key methods
+
+| Method | Description |
+|---|---|
+| `GenerateId()` | Returns a unique `report-XXXX` ID |
+| `CreateBatchAsync(count)` | Generates `count` IDs and calls `RunAllAsync` for each in parallel |
+| `RunAllAsync(reportId)` | Tracks the report if new, then calls `GenerateAsync`, `ReviewAsync` and `PublishAsync` on `IReportGrain` and records the returned statuses |
+| `RefreshAllAsync(ct)` | Calls `IReportGrain.GetSummaryAsync()` for all tracked reports in parallel; updates per-operation status and progress |
+| `CancelAllPendingAsync()` | Calls `CancelAsync()` on every report with a Pending/Processing operation, then refreshes |
+| `Remove(id)` / `RemoveAll()` | Removes one entry / all entries with no active operation |
+| `IsRestartable(entry)` | `true` when Generate is not active and any operation Failed or was Cancelled |
+| `Reports` | Read-only snapshot, most-recent first |
+
+---
+
+## `DurableJobService` — singleton, stateless
+
+Registered as a singleton but holds no state; every call resolves `IDurableJobGrain` for the given owner id.
+
+| Method | Description |
+|---|---|
+| `SubmitAsync(ownerId, jobId, request)` | Calls `IDurableJobGrain.SubmitAsync` |
+| `GetJobsAsync(ownerId)` | Returns all `DurableJobRecord`s for the owner |
+| `GetFinishedCountAsync(ownerId)` | Returns the number of terminal jobs |
+| `CancelAsync(ownerId, jobId)` | Cancels a `Processing` job; returns `false` if it is unknown or already finished. A handler that is already running is not interrupted, its data is dropped |
+| `RetryAsync(ownerId, jobId)` | Resubmits a `Failed` job with its stored request (a new run, new epoch); returns `false` if the job is not retryable |
+| `RetryAllFailedAsync(ownerId)` | Retries every failed job of the owner; returns how many were resubmitted |
+| `RecoverAsync(ownerId)` | Calls `RecoverUnfinishedJobsAsync`; returns the count recovered |
 
 ---
 

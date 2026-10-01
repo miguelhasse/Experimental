@@ -12,12 +12,15 @@ public sealed class ClusterFixture : IDisposable
     internal static readonly InMemoryJobTracker Tracker = new();
     internal static readonly FakeRequestPool Pool = new();
     internal static readonly FakeRequestPoolMonitor Monitor = new();
+    internal static readonly FakeJobOwnerLiveness Liveness = new();
 
     public TestCluster Cluster { get; }
 
     public ClusterFixture()
     {
-        var builder = new TestClusterBuilder();
+        // One silo: DurableJobGrain uses per-silo volatile journal storage, so a grain that
+        // re-activates on a different silo would not see its previous state.
+        var builder = new TestClusterBuilder(initialSilosCount: 1);
         builder.AddSiloBuilderConfigurator<SiloConfigurator>();
         Cluster = builder.Build();
         Cluster.Deploy();
@@ -33,7 +36,28 @@ public sealed class ClusterFixture : IDisposable
             siloBuilder.Services
                 .AddSingleton<IJobTracker>(ClusterFixture.Tracker)
                 .AddSingleton<IRequestPool>(ClusterFixture.Pool)
-                .AddSingleton<IRequestPoolMonitor>(ClusterFixture.Monitor);
+                .AddSingleton<IRequestPoolMonitor>(ClusterFixture.Monitor)
+                .AddSingleton<IJobOwnerLiveness>(ClusterFixture.Liveness); // registered first so TryAdd keeps it
+
+            siloBuilder.AddDurableJobJournaling();
+
+            // Scheduled durable jobs drive recovery of orphaned jobs; shorten the delays so tests do not wait minutes.
+            siloBuilder.Services
+                .Configure<JobRecoveryOptions>(o =>
+                {
+                    o.CheckPeriod = TimeSpan.FromSeconds(1);
+                    o.OrphanGracePeriod = TimeSpan.Zero;   // tests simulate owner loss and expect recovery at once (the grace rule has its own tests)
+                    o.MaxRetainedFinishedJobs = 5;         // small, so the retention rule is cheap to test
+                })
+                .Configure<DurableJobsOptions>(o =>
+                {
+                    // A shard that starts further away than the activation buffer is only started by a periodic
+                    // check, so a short check delay could wait a long time. A buffer larger than
+                    // shard duration + check delay makes every shard activate as soon as it is created.
+                    o.ShardDuration = TimeSpan.FromSeconds(1);
+                    o.ShardActivationBufferPeriod = TimeSpan.FromSeconds(5);
+                    o.JobStatusPollInterval = TimeSpan.FromMilliseconds(100);
+                });
         }
     }
 }

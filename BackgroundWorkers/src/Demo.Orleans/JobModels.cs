@@ -16,7 +16,9 @@ public interface IJobRequest
 public record JobRequest(
     [property: Id(0)] string Payload,
     [property: Id(1)] string? Category = null,
-    [property: Id(2)] RequestPriority Priority = RequestPriority.Normal) : IJobRequest;
+    [property: Id(2)] RequestPriority Priority = RequestPriority.Normal,
+    [property: Id(3)] int PartialResults = 0,
+    [property: Id(4)] string? IdempotencyKey = null) : IJobRequest;
 
 /// <summary>
 /// A job that processes a collection of items as a single unit of work.

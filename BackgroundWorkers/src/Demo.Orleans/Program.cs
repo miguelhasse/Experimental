@@ -15,6 +15,15 @@ builder.AddRequestPoolHealthCheck();
 
 builder.Services.AddSingleton<IJobTracker, InMemoryJobTracker>();
 
+// Recovery of orphaned durable jobs: "JobRecovery:CheckPeriod" and the Orleans "DurableJobs" section
+// (ShardDuration etc.) can be overridden in configuration.
+builder.Services.AddOptions<JobRecoveryOptions>().BindConfiguration("JobRecovery");
+builder.Services.AddOptions<Orleans.Hosting.DurableJobsOptions>().BindConfiguration("DurableJobs");
+
+// Render enums (e.g. JobStatus) as names in minimal-API responses.
+builder.Services.ConfigureHttpJsonOptions(o =>
+    o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
+
 // ── Request pool scheduler ────────────────────────────────────────────────────
 // One QueuedTaskScheduler owns dedicated background threads so that long-running
 // handler work never competes with Orleans grain continuations for ThreadPool
@@ -78,6 +87,7 @@ builder.Services
         options.PriorityAgingThreshold = TimeSpan.FromSeconds(30);
     })
     .AddRequestHandler<JobRequest, JobRequestHandler>()
+    .AddRequestHandler<StagedJobRequest, StagedJobRequestHandler>()
     .AddRequestHandler<BatchJobRequest, BatchJobRequestHandler>()
     .AddRequestHandler<ScheduledJobRequest, ScheduledJobRequestHandler>()
     .AddRequestHandler<BatchWorkerItemRequest, BatchWorkerItemRequestHandler>()
@@ -108,6 +118,9 @@ builder.Services.AddOrleans(silo =>
     // Start the per-silo grain service that exposes IRequestPoolMonitor
     // to grains via IRequestPoolGrainServiceClient.
     silo.AddGrainService<RequestPoolGrainService>();
+
+    // Orleans Journaling for DurableJobGrain (volatile storage + JSON journal format).
+    silo.AddDurableJobJournaling();
 });
 
 // Submits demo jobs once the silo is ready; does not block the web server.
@@ -118,6 +131,35 @@ var app = builder.Build();
 
 // Serve the Orleans dashboard at the application root (http://localhost:8080/).
 app.MapOrleansDashboard();
+
+// Durable job sample: results pushed back via a grain extension land in journaled state.
+app.MapPost("/durable-jobs/{ownerId}/{jobId}", async (
+    IGrainFactory grains, string ownerId, string jobId, string? payload, int? partialResults, string? idempotencyKey) =>
+{
+    try
+    {
+        // partialResults > 0 runs the staged handler: that many partial results are pushed back before the final one.
+        // idempotencyKey makes a client retry of the same request a no-op instead of a second run.
+        await grains.GetGrain<IDurableJobGrain>(ownerId).SubmitAsync(
+            jobId, new JobRequest(payload ?? "sample", PartialResults: partialResults ?? 0, IdempotencyKey: idempotencyKey));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+
+    return Results.Accepted($"/durable-jobs/{ownerId}/{jobId}");
+});
+app.MapGet("/durable-jobs/{ownerId}/{jobId}", async (IGrainFactory grains, string ownerId, string jobId) =>
+    await grains.GetGrain<IDurableJobGrain>(ownerId).GetJobAsync(jobId) is { } job ? Results.Ok(job) : Results.NotFound());
+app.MapPost("/durable-jobs/{ownerId}/{jobId}/cancel", async (IGrainFactory grains, string ownerId, string jobId) =>
+    Results.Ok(new { cancelled = await grains.GetGrain<IDurableJobGrain>(ownerId).CancelAsync(jobId) }));
+app.MapPost("/durable-jobs/{ownerId}/recover", async (IGrainFactory grains, string ownerId) =>
+    Results.Ok(new { resubmitted = await grains.GetGrain<IDurableJobGrain>(ownerId).RecoverUnfinishedJobsAsync() }));
+app.MapGet("/durable-jobs/{ownerId}/finished-count", async (IGrainFactory grains, string ownerId) =>
+    Results.Ok(await grains.GetGrain<IDurableJobGrain>(ownerId).GetFinishedCountAsync()));
+app.MapGet("/durable-jobs/{ownerId}", async (IGrainFactory grains, string ownerId) =>
+    Results.Ok(await grains.GetGrain<IDurableJobGrain>(ownerId).GetJobsAsync()));
 
 await app.RunAsync();
 

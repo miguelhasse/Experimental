@@ -1,4 +1,4 @@
-<Project Sdk="Aspire.AppHost.Sdk/13.5.3">
+<Project Sdk="Aspire.AppHost.Sdk/13.6.0">
   <!--
     Aspire.AppHost.Sdk is the NuGet-based replacement for the deprecated Aspire workload.
     It sets SkipAspireWorkloadManifest=true (suppresses NETSDK1228), sets IsAspireHost=true

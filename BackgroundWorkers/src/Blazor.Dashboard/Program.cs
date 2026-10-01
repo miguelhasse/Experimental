@@ -14,6 +14,7 @@ builder.Services.AddSingleton<NotificationService>();
 builder.Services.AddSingleton<DocumentProcessingService>();
 builder.Services.AddSingleton<ReportService>();
 builder.Services.AddSingleton<BatchService>();
+builder.Services.AddSingleton<DurableJobService>();
 
 // Connect to the Orleans silo running in the same Aspire application.
 // UseLocalhostClustering matches the silo's UseLocalhostClustering() config (gateway port 30000).
